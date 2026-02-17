@@ -319,13 +319,25 @@ server.listen(PORT, () => {
 
 // Better logging for unexpected crashes to help platform diagnostics
 process.on('uncaughtException', (err) => {
+  // If this looks like a Mongo connection refusal, log but do not crash the process
+  const msg = err && (err.message || err.toString());
+  if (msg && /ECONNREFUSED.*127\.0\.0\.1:27017|MongooseServerSelectionError/i.test(msg)) {
+    console.error('Non-fatal Mongo uncaught exception (ignored):', msg);
+    return;
+  }
   console.error('Uncaught Exception:', err && err.stack ? err.stack : err);
   // exit after logging so the platform/crash detector can restart the process
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, p) => {
+  // Treat Mongo network selection errors as non-fatal when no DB is configured
+  const msg = reason && (reason.message || reason.toString());
+  if (msg && /ECONNREFUSED.*127\.0\.0\.1:27017|MongooseServerSelectionError/i.test(msg)) {
+    console.error('Non-fatal Mongo unhandled rejection (ignored):', msg);
+    return;
+  }
   console.error('Unhandled Rejection at:', p, 'reason:', reason);
-  // exit after logging; platform should restart the process
+  // exit after logging; platform should restart the process for other errors
   process.exit(1);
 });
