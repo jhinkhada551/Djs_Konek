@@ -38,8 +38,17 @@
 
           <form id="messageForm" class="card message-form">
             <input id="messageInput" placeholder="Write a message..." autocomplete="off" />
-            <input id="fileInput" type="file" accept="image/*,audio/*,video/*" />
-            <button type="submit">Send</button>
+              <div class="input-row">
+                <input id="messageInput" placeholder="Write a message..." autocomplete="off" />
+                <div class="controls">
+                  <button type="button" id="emojiBtn" title="Emoji">😊</button>
+                  <button type="button" id="gifBtn" title="GIF">GIF</button>
+                  <label class="file-label">📎<input id="fileInput" type="file" accept="image/*,image/gif,audio/*,video/*" /></label>
+                  <button type="submit">Send</button>
+                </div>
+              </div>
+              <div id="attachmentPreview" class="attachment-preview hidden"></div>
+              <div id="profanityWarning" class="profanity-warning hidden"></div>
           </form>
         </div>
       </section>

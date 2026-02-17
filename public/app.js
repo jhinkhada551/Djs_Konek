@@ -14,6 +14,10 @@
   const messageInput = document.getElementById('messageInput');
   const fileInput = document.getElementById('fileInput');
   const typingEl = document.getElementById('typing');
+  const attachmentPreviewEl = document.getElementById('attachmentPreview');
+  const profanityWarningEl = document.getElementById('profanityWarning');
+  const emojiBtn = document.getElementById('emojiBtn');
+  const gifBtn = document.getElementById('gifBtn');
   const lightbox = document.getElementById('lightbox');
   const lbMedia = lightbox ? lightbox.querySelector('[data-role="media"]') : null;
   const lbDownload = lightbox ? lightbox.querySelector('[data-role="download"]') : null;
@@ -32,6 +36,118 @@
   // append to chatArea
   const chatArea = document.getElementById('chatArea');
   if (chatArea) chatArea.appendChild(jumpBtn);
+
+  // Attachment state (queued until user presses Send)
+  let pendingAttachment = null; // { file, url, mime, originalName, isGif }
+
+  // Emoji & GIF data (small curated set)
+  const EMOJIS = ['😊','😂','❤️','👍','🔥','😮','😢','🎉','👏','🙌','😉','😎'];
+  const GIFS = [
+    '/uploads/sample-gif-1.gif','/uploads/sample-gif-2.gif','/uploads/sample-gif-3.gif',
+    'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif','https://media.giphy.com/media/l0HlQ7LRalQw1zT7W/giphy.gif'
+  ];
+
+  // Profanity lists (simple, extendable) - English and Filipino (examples)
+  const PROFANITY = [
+    'fuck','shit','bitch','asshole','damn',
+    'tangina','putangina','gago','ulol','tanginamo'
+  ];
+
+  function detectProfanity(text) {
+    if (!text) return [];
+    const found = new Set();
+    const lower = text.toLowerCase();
+    PROFANITY.forEach(word => {
+      const re = new RegExp('\\b'+word.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')+'\\b','i');
+      if (re.test(lower)) found.add(word);
+    });
+    return Array.from(found);
+  }
+
+  function censorText(text) {
+    let out = text;
+    PROFANITY.forEach(word => {
+      const re = new RegExp('\\b('+word.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')+')\\b','ig');
+      out = out.replace(re, (m) => {
+        if (m.length <= 2) return '*'.repeat(m.length);
+        const head = m[0]; const tail = m[m.length-1];
+        return head + '*'.repeat(m.length-2) + tail;
+      });
+    });
+    return out;
+  }
+
+  // Emoji & GIF picker UI (simple floating panels)
+  const emojiPicker = document.createElement('div'); emojiPicker.className = 'emoji-picker';
+  const emojiGrid = document.createElement('div'); emojiGrid.className = 'emoji-grid';
+  EMOJIS.forEach(em => { const b = document.createElement('button'); b.type='button'; b.className='emoji-btn'; b.textContent = em; b.addEventListener('click', () => {
+    insertAtCursor(messageInput, em); emojiPicker.style.display='none';
+  }); emojiGrid.appendChild(b); });
+  emojiPicker.appendChild(emojiGrid); document.body.appendChild(emojiPicker);
+
+  const gifPicker = document.createElement('div'); gifPicker.className='gif-picker';
+  const gifGrid = document.createElement('div'); gifGrid.className='gif-grid';
+  GIFS.forEach(url => { const img = document.createElement('img'); img.src = url; img.addEventListener('click', () => {
+    // set pendingAttachment as gif (no upload)
+    pendingAttachment = { file: null, url, mime: 'image/gif', originalName: 'gif.gif', isGif: true };
+    showAttachmentPreview(pendingAttachment);
+    gifPicker.style.display='none';
+  }); gifGrid.appendChild(img); });
+  gifPicker.appendChild(gifGrid); document.body.appendChild(gifPicker);
+
+  // helper to insert emoji at cursor
+  function insertAtCursor(el, text) {
+    const start = el.selectionStart || 0; const end = el.selectionEnd || 0;
+    const v = el.value || '';
+    el.value = v.slice(0,start) + text + v.slice(end);
+    const pos = start + text.length; el.setSelectionRange(pos,pos); el.focus();
+  }
+
+  // show/hide pickers
+  emojiBtn.addEventListener('click', (e)=>{
+    const r = emojiBtn.getBoundingClientRect(); emojiPicker.style.left = (r.left)+'px'; emojiPicker.style.top = (r.bottom+6)+'px'; emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none':'block';
+    gifPicker.style.display='none';
+  });
+  gifBtn.addEventListener('click', ()=>{ const r = gifBtn.getBoundingClientRect(); gifPicker.style.left=(r.left)+'px'; gifPicker.style.top=(r.bottom+6)+'px'; gifPicker.style.display = gifPicker.style.display === 'block' ? 'none':'block'; emojiPicker.style.display='none'; });
+
+  // show attachment preview
+  function showAttachmentPreview(att) {
+    if (!attachmentPreviewEl) return;
+    attachmentPreviewEl.innerHTML = '';
+    if (!att) { attachmentPreviewEl.classList.add('hidden'); return; }
+    const thumb = document.createElement(att.mime && att.mime.startsWith('image/') ? 'img' : (att.mime && att.mime.startsWith('video/') ? 'video':'div'));
+    if (thumb.tagName === 'IMG' || thumb.tagName === 'VIDEO') {
+      if (att.url) {
+        thumb.src = att.url;
+      } else if (att.file) {
+        // create object URL for preview and remember to revoke it later
+        const obj = URL.createObjectURL(att.file);
+        thumb.src = obj;
+        att._objectUrl = obj;
+      } else {
+        thumb.src = '';
+      }
+      thumb.alt = att.originalName || '';
+      if (thumb.tagName === 'VIDEO') { thumb.controls = true; thumb.preload='none'; }
+      thumb.className = 'attachment-thumb';
+      attachmentPreviewEl.appendChild(thumb);
+    } else {
+      const meta = document.createElement('div'); meta.className='attachment-meta'; meta.textContent = att.originalName || 'attachment'; attachmentPreviewEl.appendChild(meta);
+    }
+    const meta = document.createElement('div'); meta.className='attachment-meta'; meta.innerHTML = `<div>${att.originalName || ''}</div><div style="color:var(--muted);font-size:12px">${att.mime||''}</div>`;
+    const rem = document.createElement('button'); rem.className='attachment-remove'; rem.textContent='Remove'; rem.addEventListener('click', ()=>{ pendingAttachment = null; clearAttachmentPreview(); if (fileInput) fileInput.value = ''; });
+    attachmentPreviewEl.appendChild(meta); attachmentPreviewEl.appendChild(rem); attachmentPreviewEl.classList.remove('hidden');
+  }
+  function clearAttachmentPreview(){ if (!attachmentPreviewEl) return; try {
+      if (pendingAttachment && pendingAttachment._objectUrl) { try { URL.revokeObjectURL(pendingAttachment._objectUrl); } catch(e){} }
+    } catch(e){}
+    attachmentPreviewEl.innerHTML=''; attachmentPreviewEl.classList.add('hidden'); }
+
+  // file input change: queue file for send and preview
+  fileInput.addEventListener('change', (e)=>{
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return; pendingAttachment = { file: f, url: null, mime: f.type, originalName: f.name, isGif:false }; showAttachmentPreview(pendingAttachment);
+  });
 
   // notification sound using Web Audio API
   function playNotificationSound() {
@@ -342,27 +458,44 @@
   messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!me) return alert('Please join first');
-    const text = messageInput.value.trim();
-    const file = fileInput.files[0];
-    let fileInfo = null;
-    if (file) {
-      const fd = new FormData(); fd.append('file', file);
-      const res = await fetch('/upload', { method: 'POST', body: fd });
-      if (!res.ok) { alert('Upload failed'); return; }
-      const j = await res.json();
-      fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+    let text = messageInput.value.trim();
+    // profanity detection
+    const bad = detectProfanity(text);
+    if (bad.length > 0) {
+      // show warning and censor on confirm
+      const censored = censorText(text);
+      const ok = confirm('Profanity detected (' + bad.join(', ') + '). The message will be censored. Continue?');
+      if (!ok) return;
+      text = censored;
     }
 
-    // prevent sending an empty message (no text and no file)
-    if (!text && !fileInfo) {
-      // small inline feedback
-      alert('Please enter a message or attach a file before sending.');
-      return;
+    // determine attachment to send: pendingAttachment (from paste/file/gif) or none
+    let fileInfo = null;
+    if (pendingAttachment) {
+      if (pendingAttachment.file) {
+        // upload file
+        const fd = new FormData(); fd.append('file', pendingAttachment.file, pendingAttachment.originalName || 'upload');
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        if (!res.ok) { alert('Upload failed'); return; }
+        const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+      } else if (pendingAttachment.url) {
+        // GIF or remote URL - send as-is
+        fileInfo = { url: pendingAttachment.url, mime: pendingAttachment.mime || 'image/gif', originalName: pendingAttachment.originalName || 'gif' };
+      }
+    } else if (fileInput.files && fileInput.files[0]) {
+      // fallback if fileInput used directly
+      const f = fileInput.files[0]; const fd = new FormData(); fd.append('file', f);
+      const res = await fetch('/upload', { method: 'POST', body: fd });
+      if (!res.ok) { alert('Upload failed'); return; }
+      const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
     }
+
+    if (!text && !fileInfo) { alert('Please enter a message or attach a file before sending.'); return; }
 
     socket.emit('message', { text, file: fileInfo });
     messageInput.value = '';
-    fileInput.value = '';
+    // clear pending and input
+    pendingAttachment = null; clearAttachmentPreview(); if (fileInput) fileInput.value = '';
     socket.emit('typing', false);
   });
 
@@ -371,6 +504,21 @@
     socket.emit('typing', true);
     if (typingTimeout) clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => { socket.emit('typing', false); }, 1200);
+  });
+
+  // show inline profanity warning while typing
+  messageInput.addEventListener('input', () => {
+    const txt = messageInput.value || '';
+    const bad = detectProfanity(txt);
+    if (bad.length > 0) {
+      if (profanityWarningEl) { profanityWarningEl.textContent = 'Warning: profane words detected: ' + bad.join(', '); profanityWarningEl.classList.remove('hidden'); }
+    } else { if (profanityWarningEl) profanityWarningEl.classList.add('hidden'); }
+  });
+
+  // click outside to close pickers
+  document.addEventListener('click', (e) => {
+    if (emojiPicker && !emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.style.display='none';
+    if (gifPicker && !gifPicker.contains(e.target) && e.target !== gifBtn) gifPicker.style.display='none';
   });
 
   // Paste-to-upload support: allow users to paste images/videos/audio from clipboard
@@ -386,17 +534,16 @@
           // only accept image/audio/video types
           if (!file.type || !(file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/'))) continue;
           e.preventDefault();
-          const fd = new FormData();
-          fd.append('file', file, file.name || 'pasted');
-          const res = await fetch('/upload', { method: 'POST', body: fd });
-          if (!res.ok) { console.warn('Paste upload failed'); continue; }
-          const j = await res.json();
-          const fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
-          socket.emit('message', { text: '', file: fileInfo });
+          // queue attachment and show preview instead of auto-sending
+          pendingAttachment = { file, url: null, mime: file.type, originalName: file.name || 'pasted', isGif: false };
+          showAttachmentPreview(pendingAttachment);
+          // focus message input so user can add text before sending
+          if (messageInput) messageInput.focus();
+          return;
         }
       }
     } catch (err) {
-      console.error('Paste upload error', err);
+      console.error('Paste handling error', err);
     }
   }
 
