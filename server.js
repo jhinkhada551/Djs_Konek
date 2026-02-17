@@ -319,6 +319,43 @@ io.on('connection', (socket) => {
       }
     }
   });
+
+  // allow a client to request a single message by id (useful when a reaction/update arrives but the message DOM was missing)
+  socket.on('request-message', (opts) => {
+    const id = opts && opts.id;
+    if (!id) return;
+    try {
+      if (useSqlite && db) {
+        db.get(`SELECT * FROM messages WHERE id = ?`, [id], (err, row) => {
+          if (err || !row) return;
+          const m = {
+            id: row.id,
+            from: { id: null, name: row.name, group: row.groupname, avatar: JSON.parse(row.avatar || '{}') },
+            text: row.text,
+            file: JSON.parse(row.file || 'null'),
+            reactions: JSON.parse(row.reactions || '{}'),
+            ts: row.ts
+          };
+          socket.emit('message', m);
+        });
+      } else {
+        const list = JSON.parse(fs.readFileSync(jsonFile, 'utf8') || '[]');
+        const item = (list || []).find(r => r.id === id);
+        if (!item) return;
+        const m = {
+          id: item.id,
+          from: { id: null, name: item.name, group: item.groupname, avatar: JSON.parse(item.avatar || '{}') },
+          text: item.text,
+          file: JSON.parse(item.file || 'null'),
+          reactions: JSON.parse(item.reactions || '{}'),
+          ts: item.ts
+        };
+        socket.emit('message', m);
+      }
+    } catch (e) {
+      console.error('request-message error', e && e.message);
+    }
+  });
 });
 
 const PORT = process.env.PORT || 3000;

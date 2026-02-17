@@ -151,16 +151,31 @@
   // helper to lock reactions UI for a message and show a Change button
   function lockReactionsUI(mid) {
     const msgEl = messagesEl.querySelector(`.message[data-id="${mid}"]`);
-    if (!msgEl) return;
+    if (!msgEl) {
+      // If we don't have the message element locally (race or missed history), request the message from server so
+      // we can render it and show the reactions without requiring a full page refresh.
+      try { socket.emit('request-message', { id: mid }); } catch (e) {}
+      return;
+    }
     const reactionsInner = msgEl.querySelector('.reactions-inner');
     if (!reactionsInner) return;
     // disable existing reaction buttons
-    reactionsInner.querySelectorAll('.reaction-btn, .reaction-mini').forEach(b => { try { b.disabled = true; } catch (e) {} });
-    // if a change button already exists, don't add another
-    if (reactionsInner.querySelector('.reaction-change')) return;
-    const changeBtn = document.createElement('button'); changeBtn.className = 'reaction-change'; changeBtn.type = 'button'; changeBtn.textContent = 'Change';
-    changeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showReactionPickerForMessage(mid, changeBtn); });
-    reactionsInner.appendChild(changeBtn);
+    reactionsInner.querySelectorAll('.reaction-btn').forEach(b => { try { b.disabled = true; } catch (e) {} });
+    // hide inline mini-picker if present (we'll use the floating picker)
+    const inlinePicker = reactionsInner.querySelector('.reaction-picker'); if (inlinePicker) inlinePicker.style.display = 'none';
+
+    // if a "current reaction" button already exists, don't add another
+    if (reactionsInner.querySelector('.reaction-current')) return;
+
+    // find which emoji the current user reacted with (server-marked .reacted)
+    const reactedBtn = reactionsInner.querySelector('.reaction-btn.reacted');
+    const myEmoji = reactedBtn ? reactedBtn.dataset.emoji : null;
+    // create a compact current-reaction button (shows the emoji you reacted with). Clicking it opens the picker
+    const currentBtn = document.createElement('button'); currentBtn.className = 'reaction-current'; currentBtn.type = 'button';
+    currentBtn.textContent = myEmoji || '●';
+    currentBtn.title = myEmoji ? `You reacted ${myEmoji}. Click to change.` : 'You reacted. Click to change.';
+    currentBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showReactionPickerForMessage(mid, currentBtn); });
+    reactionsInner.appendChild(currentBtn);
   }
 
   function unlockReactionsUI(mid) {
@@ -168,8 +183,10 @@
     if (!msgEl) return;
     const reactionsInner = msgEl.querySelector('.reactions-inner');
     if (!reactionsInner) return;
-    reactionsInner.querySelectorAll('.reaction-btn, .reaction-mini').forEach(b => { try { b.disabled = false; } catch (e) {} });
-    const cb = reactionsInner.querySelector('.reaction-change'); if (cb) cb.remove();
+    reactionsInner.querySelectorAll('.reaction-btn').forEach(b => { try { b.disabled = false; } catch (e) {} });
+    // restore inline picker visibility
+    const inlinePicker = reactionsInner.querySelector('.reaction-picker'); if (inlinePicker) inlinePicker.style.display = '';
+    const cb = reactionsInner.querySelector('.reaction-current'); if (cb) cb.remove();
   }
 
   // Emoji data (small curated set)
