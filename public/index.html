@@ -69,54 +69,7 @@
       <div class="spinner" aria-hidden="true"></div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
-    <!-- Optional: modern module-based Firebase initialization (added if not present) -->
-    <script type="module">
-      // Module SDK init — will run in browsers that support ES modules.
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-      import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-analytics.js";
-      // Your Firebase config (same as compat block)
-      const firebaseConfig = {
-        apiKey: "AIzaSyCtGOAImRofTpChNO7Z6zDFujGwtUyJU4U",
-        authDomain: "djskonek.firebaseapp.com",
-        projectId: "djskonek",
-        storageBucket: "djskonek.firebasestorage.app",
-        messagingSenderId: "112695093620",
-        appId: "1:112695093620:web:d592dce4268e809ef1e421",
-        measurementId: "G-J03PXL0QGE"
-      };
-      try {
-        // Avoid initializing twice in the same page
-        if (!window._firebase_module_init) {
-          const app = initializeApp(firebaseConfig);
-          try { getAnalytics(app); } catch (e) {}
-          window._firebase_module_init = true;
-          console.info('Firebase module SDK initialized');
-        }
-      } catch (e) { console.warn('Firebase module init error', e); }
-    </script>
-
-    <!-- Firebase (compat) for client-side Storage uploads when configured -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-storage-compat.js"></script>
-    <script>
-      // Paste your Firebase web config here or the server can inject it.
-      window.FIREBASE_CONFIG = {
-        apiKey: "AIzaSyCtGOAImRofTpChNO7Z6zDFujGwtUyJU4U",
-        authDomain: "djskonek.firebaseapp.com",
-        projectId: "djskonek",
-        storageBucket: "djskonek.firebasestorage.app",
-        messagingSenderId: "112695093620",
-        appId: "1:112695093620:web:d592dce4268e809ef1e421",
-        measurementId: "G-J03PXL0QGE"
-      };
-      try {
-        if (window.FIREBASE_CONFIG && window.firebase && !window._firebase_storage) {
-          firebase.initializeApp(window.FIREBASE_CONFIG);
-          window._firebase_storage = firebase.storage();
-          console.info('Firebase storage initialized for client-side uploads');
-        }
-      } catch (e) { console.warn('Firebase init error', e); }
-    </script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
     <footer id="watermark">Developed by JHIN</footer>
   </body>

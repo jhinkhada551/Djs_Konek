@@ -41,6 +41,8 @@ const app = express();
 // Allow configuring allowed origin in production via env var
 const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 app.use(cors({ origin: allowedOrigin }));
+// parse JSON bodies for small requests (e.g., rehost requests)
+app.use(express.json({ limit: '1mb' }));
 
   // Basic security headers (lightweight; consider helmet for full protection)
   app.use((req, res, next) => {
@@ -135,6 +137,81 @@ app.get('/download', async (req, res) => {
   } catch (err) {
     console.error('download proxy error', err && err.message);
     res.status(500).send('Server error');
+  }
+});
+
+// Rehost remote media: fetch a remote URL and save it into our uploads folder, returning a local /uploads URL.
+// POST body: { url: 'https://example.com/foo.gif' }
+app.post('/rehost', async (req, res) => {
+  const src = req.body && req.body.url ? String(req.body.url) : '';
+  if (!src || !/^https?:\/\//i.test(src)) return res.status(400).json({ error: 'invalid_url' });
+  try {
+    const u = new URL(src);
+    // Basic host restriction: no localhost or loopback
+    if (['localhost', '127.0.0.1', '::1'].includes(u.hostname)) return res.status(400).json({ error: 'invalid_host' });
+  } catch (e) {
+    return res.status(400).json({ error: 'invalid_url' });
+  }
+
+  const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+  try {
+    const protocol = src.startsWith('https://') ? require('https') : require('http');
+    const timeoutMs = 15000;
+    const reqRemote = protocol.get(src, { timeout: timeoutMs, headers: { 'User-Agent': 'DjsKonek/1.0' } }, (remoteRes) => {
+      if (remoteRes.statusCode >= 400) {
+        res.status(502).json({ error: 'upstream_error', status: remoteRes.statusCode });
+        remoteRes.resume();
+        return;
+      }
+      const ct = (remoteRes.headers['content-type'] || '').toLowerCase();
+      if (!ct.startsWith('image/') && !ct.startsWith('video/') && !ct.startsWith('audio/')) {
+        res.status(400).json({ error: 'unsupported_media', contentType: ct });
+        remoteRes.resume();
+        return;
+      }
+      const cl = parseInt(remoteRes.headers['content-length'] || '0', 10) || 0;
+      if (cl > MAX_SIZE) {
+        res.status(413).json({ error: 'too_large', max: MAX_SIZE });
+        remoteRes.resume();
+        return;
+      }
+      // determine extension
+      let ext = '';
+      try {
+        const m = ct.split('/')[1].split(';')[0];
+        if (m) ext = '.' + m.replace(/[^a-z0-9]/g, '');
+      } catch (e) { ext = '' }
+      if (!ext) {
+        const parts = src.split('/'); const last = parts.pop() || '';
+        const pext = last.split('.').pop(); if (pext && pext.length <= 5) ext = '.' + pext;
+      }
+      if (!ext) ext = '.bin';
+
+      const safeName = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8) + ext;
+      const destPath = path.join(uploadsDir, safeName);
+      const out = fs.createWriteStream(destPath);
+      let received = 0;
+      remoteRes.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_SIZE) {
+          try { out.destroy(); fs.unlinkSync(destPath); } catch (e) {}
+          remoteRes.destroy();
+          return res.status(413).json({ error: 'too_large' });
+        }
+      });
+      remoteRes.pipe(out);
+      out.on('finish', () => {
+        try {
+          res.json({ url: `/uploads/${safeName}`, originalName: path.basename(src).split('?')[0] || safeName, mime: remoteRes.headers['content-type'] || '' });
+        } catch (e) { res.status(500).json({ error: 'save_error' }); }
+      });
+      out.on('error', (err) => { try { fs.unlinkSync(destPath); } catch (e) {} ; res.status(500).json({ error: 'save_error' }); });
+    });
+    reqRemote.on('error', (err) => { res.status(502).json({ error: 'fetch_error' }); });
+    reqRemote.on('timeout', () => { reqRemote.abort(); res.status(504).json({ error: 'timeout' }); });
+  } catch (err) {
+    console.error('rehost error', err && err.message);
+    res.status(500).json({ error: 'server_error' });
   }
 });
 

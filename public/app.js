@@ -764,71 +764,41 @@
     // perform upload if necessary
     let fileInfo = null;
     try {
-      // If the pendingAttachment is an external URL (e.g., pasted GIF from web), no upload is required.
-      if (pendingAttachment && pendingAttachment.url) {
-        fileInfo = { url: pendingAttachment.url, mime: pendingAttachment.mime || 'image/gif', originalName: pendingAttachment.originalName || 'pasted.gif' };
-      } else if (pendingAttachment && pendingAttachment.file) {
-        // show global loader
-        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
-        // prefer Firebase Storage if configured on the page (client-side)
-        if (window._firebase_storage) {
+        // If the pendingAttachment is an external URL (e.g., pasted GIF from web), attempt to rehost it on our server
+        if (pendingAttachment && pendingAttachment.url) {
           try {
-            const filename = (pendingAttachment.originalName || 'upload').replace(/[^a-zA-Z0-9.\-_]/g,'_');
-            const ref = window._firebase_storage.ref().child('uploads/' + Date.now().toString(36) + '-' + filename);
-            // ref.put returns an UploadTask (not a Promise) in the compat SDK; wrap it so we wait for completion
-            const uploadTask = ref.put(pendingAttachment.file, { contentType: pendingAttachment.mime });
-            const snap = await new Promise((resolve, reject) => {
-              try {
-                uploadTask.on('state_changed', null, (err) => reject(err), () => resolve(uploadTask.snapshot));
-              } catch (e) { reject(e); }
-            });
-            const url = await snap.ref.getDownloadURL();
-            fileInfo = { url: url, mime: pendingAttachment.mime, originalName: pendingAttachment.originalName };
+            // show loader while rehosting
+            if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
+            const r = await fetch('/rehost', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: pendingAttachment.url }) });
+            if (r.ok) {
+              const j = await r.json(); fileInfo = { url: j.url, mime: j.mime || pendingAttachment.mime || 'image/gif', originalName: j.originalName || pendingAttachment.originalName || 'pasted.gif' };
+            } else {
+              // fallback to external URL if rehosting failed
+              try { const j = await r.json(); console.warn('rehost failed', j); } catch (e) {}
+              fileInfo = { url: pendingAttachment.url, mime: pendingAttachment.mime || 'image/gif', originalName: pendingAttachment.originalName || 'pasted.gif' };
+            }
           } catch (e) {
-            console.warn('Firebase upload failed, falling back to server upload', e);
-            const fd = new FormData(); fd.append('file', pendingAttachment.file, pendingAttachment.originalName || 'upload');
-            const res = await fetch('/upload', { method: 'POST', body: fd });
-            if (!res.ok) throw new Error('upload-failed');
-            const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+            console.warn('rehost error', e);
+            fileInfo = { url: pendingAttachment.url, mime: pendingAttachment.mime || 'image/gif', originalName: pendingAttachment.originalName || 'pasted.gif' };
+          } finally {
+            if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
           }
-        } else {
+        } else if (pendingAttachment && pendingAttachment.file) {
+          // show global loader
+          if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
           const fd = new FormData(); fd.append('file', pendingAttachment.file, pendingAttachment.originalName || 'upload');
           const res = await fetch('/upload', { method: 'POST', body: fd });
           if (!res.ok) throw new Error('upload-failed');
           const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
-        }
-        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
-      } else if (fileInput.files && fileInput.files[0]) {
-        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
-        const f = fileInput.files[0];
-        // prefer Firebase Storage if configured
-        if (window._firebase_storage) {
-          try {
-            const filename = (f.name || 'upload').replace(/[^a-zA-Z0-9.\-_]/g,'_');
-            const ref = window._firebase_storage.ref().child('uploads/' + Date.now().toString(36) + '-' + filename);
-            const uploadTask = ref.put(f, { contentType: f.type });
-            const snap = await new Promise((resolve, reject) => {
-              try {
-                uploadTask.on('state_changed', null, (err) => reject(err), () => resolve(uploadTask.snapshot));
-              } catch (e) { reject(e); }
-            });
-            const url = await snap.ref.getDownloadURL();
-            fileInfo = { url: url, mime: f.type, originalName: f.name };
-          } catch (e) {
-            console.warn('Firebase upload failed, falling back to server upload', e);
-            const fd = new FormData(); fd.append('file', f);
-            const res = await fetch('/upload', { method: 'POST', body: fd });
-            if (!res.ok) throw new Error('upload-failed');
-            const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
-          }
-        } else {
-          const fd = new FormData(); fd.append('file', f);
+          if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
+        } else if (fileInput.files && fileInput.files[0]) {
+          if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
+          const f = fileInput.files[0]; const fd = new FormData(); fd.append('file', f);
           const res = await fetch('/upload', { method: 'POST', body: fd });
           if (!res.ok) throw new Error('upload-failed');
           const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+          if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
         }
-        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
-      }
     } catch (err) {
       // mark node as failed
       // hide global loader if visible
