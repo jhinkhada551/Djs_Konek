@@ -106,6 +106,10 @@ h1{margin:0;font-size:20px}
 .reaction-picker-pop{background:rgba(2,6,23,0.95);border:1px solid rgba(255,255,255,0.04);padding:6px;border-radius:8px;display:flex;gap:6px}
 .reaction-add{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:4px 8px;border-radius:6px;color:var(--text);cursor:pointer}
 .reaction-btn{display:inline-flex;align-items:center;gap:6px}
+.reaction-change{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:8px;color:var(--text);cursor:pointer;margin-left:8px}
+.reaction-change:hover{background:rgba(255,255,255,0.02)}
+/* ensure reaction picker popup is above media/lightbox */
+.reaction-picker-pop{z-index:9999}
 
 /* seen receipts */
 .seen-wrap{margin-top:8px}

@@ -49,7 +49,13 @@
   // single floating reaction picker reused for all messages
   const reactionPicker = document.createElement('div'); reactionPicker.className = 'reaction-picker-pop';
   REACTION_EMOJIS.forEach(em => { const b = document.createElement('button'); b.type='button'; b.className='reaction-mini'; b.textContent = em; b.addEventListener('click', () => {
-    const targetMid = reactionPicker.dataset.mid; if (targetMid) socket.emit('react', { messageId: targetMid, emoji: em }); reactionPicker.style.display='none';
+    const targetMid = reactionPicker.dataset.mid;
+    if (targetMid) {
+      // optimistic UI update: reflect user's new reaction immediately
+      optimisticUpdateReaction(targetMid, em);
+      socket.emit('react', { messageId: targetMid, emoji: em });
+    }
+    reactionPicker.style.display='none';
   }); reactionPicker.appendChild(b); });
   reactionPicker.style.position='absolute'; reactionPicker.style.display='none'; reactionPicker.style.zIndex='220'; document.body.appendChild(reactionPicker);
 
@@ -58,6 +64,85 @@
     const r = anchorEl.getBoundingClientRect();
     reactionPicker.style.left = (r.left) + 'px'; reactionPicker.style.top = (r.bottom + 6) + 'px';
     reactionPicker.dataset.mid = mid; reactionPicker.style.display = 'block';
+  }
+
+  // Optimistically update reaction UI for a message (client-side only) before server confirmation
+  function optimisticUpdateReaction(mid, emoji) {
+    const msgEl = messagesEl.querySelector(`.message[data-id="${mid}"]`) || messagesEl.querySelector(`.message[data-temp-id="${mid}"]`);
+    if (!msgEl) return;
+    const reactionsInner = msgEl.querySelector('.reactions-inner');
+    if (!reactionsInner) return;
+    // find previous reacted emoji by this user
+    let prevEm = null;
+    reactionsInner.querySelectorAll('.reaction-btn').forEach(b => {
+      if (b.classList.contains('reacted')) prevEm = b.dataset.emoji;
+    });
+    // if clicking same emoji => toggle off
+    if (prevEm === emoji) {
+      // decrement count and remove reacted
+      const prevBtn = reactionsInner.querySelector(`.reaction-btn[data-emoji="${emoji}"]`);
+      if (prevBtn) {
+        const parts = prevBtn.textContent.trim().split(' ');
+        const count = parseInt(parts[parts.length-1]) || 1;
+        const newCount = Math.max(0, count - 1);
+        prevBtn.textContent = `${emoji} ${newCount}`;
+        prevBtn.classList.remove('reacted');
+        if (newCount === 0) prevBtn.remove();
+      }
+      unlockReactionsUI(mid);
+      return;
+    }
+    // remove previous reaction visually
+    if (prevEm) {
+      const prevBtn = reactionsInner.querySelector(`.reaction-btn[data-emoji="${prevEm}"]`);
+      if (prevBtn) {
+        const parts = prevBtn.textContent.trim().split(' ');
+        const count = parseInt(parts[parts.length-1]) || 1;
+        const newCount = Math.max(0, count - 1);
+        if (newCount === 0) prevBtn.remove(); else prevBtn.textContent = `${prevEm} ${newCount}`;
+        prevBtn.classList.remove('reacted');
+      }
+    }
+    // add/increment new emoji button
+    let newBtn = reactionsInner.querySelector(`.reaction-btn[data-emoji="${emoji}"]`);
+    if (newBtn) {
+      const parts = newBtn.textContent.trim().split(' ');
+      const count = parseInt(parts[parts.length-1]) || 0;
+      newBtn.textContent = `${emoji} ${count + 1}`;
+    } else {
+      newBtn = document.createElement('button'); newBtn.className = 'reaction-btn reacted'; newBtn.dataset.emoji = emoji; newBtn.textContent = `${emoji} 1`;
+      newBtn.addEventListener('click', () => {
+        try { newBtn.disabled = true; setTimeout(() => newBtn.disabled = false, 700); } catch (e) {}
+        socket.emit('react', { messageId: mid, emoji });
+      });
+      reactionsInner.insertBefore(newBtn, reactionsInner.firstChild);
+    }
+    newBtn.classList.add('reacted');
+    lockReactionsUI(mid);
+  }
+
+  // helper to lock reactions UI for a message and show a Change button
+  function lockReactionsUI(mid) {
+    const msgEl = messagesEl.querySelector(`.message[data-id="${mid}"]`);
+    if (!msgEl) return;
+    const reactionsInner = msgEl.querySelector('.reactions-inner');
+    if (!reactionsInner) return;
+    // disable existing reaction buttons
+    reactionsInner.querySelectorAll('.reaction-btn, .reaction-mini').forEach(b => { try { b.disabled = true; } catch (e) {} });
+    // if a change button already exists, don't add another
+    if (reactionsInner.querySelector('.reaction-change')) return;
+    const changeBtn = document.createElement('button'); changeBtn.className = 'reaction-change'; changeBtn.type = 'button'; changeBtn.textContent = 'Change';
+    changeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showReactionPickerForMessage(mid, changeBtn); });
+    reactionsInner.appendChild(changeBtn);
+  }
+
+  function unlockReactionsUI(mid) {
+    const msgEl = messagesEl.querySelector(`.message[data-id="${mid}"]`);
+    if (!msgEl) return;
+    const reactionsInner = msgEl.querySelector('.reactions-inner');
+    if (!reactionsInner) return;
+    reactionsInner.querySelectorAll('.reaction-btn, .reaction-mini').forEach(b => { try { b.disabled = false; } catch (e) {} });
+    const cb = reactionsInner.querySelector('.reaction-change'); if (cb) cb.remove();
   }
 
   // Emoji data (small curated set)
@@ -373,7 +458,8 @@
   });
 
   socket.on('message', (m) => {
-    // If this message corresponds to a clientTempId (optimistic), find the temp node and reconcile
+    // If this message corresponds to a clientTempId (optimistic), try to find the temp node and reconcile.
+    // If no temp node exists (other clients), still append the message so broadcasts aren't dropped.
     if (m.clientTempId) {
       const tempEl = messagesEl.querySelector(`.message[data-temp-id="${m.clientTempId}"]`);
       if (tempEl) {
@@ -394,6 +480,12 @@
         try { const st = tempEl.querySelector('.status'); if (st) st.innerHTML = ''; } catch (e) {}
         // observe for seen events
         try { if (m.id) ensureObserver().observe(tempEl); } catch (e) {}
+      } else {
+        // no temp element found (this client didn't create the optimistic message) -> append normally
+        const node = renderMessage(m);
+        messagesEl.appendChild(node);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        if (m.id) ensureObserver().observe(node);
       }
     } else {
       const node = renderMessage(m);
@@ -524,18 +616,34 @@
       const reacted = arr.find(a => a.id === socket.id);
       if (reacted) btn.classList.add('reacted');
       btn.addEventListener('click', () => {
+        // prevent multiple quick clicks
+        try { btn.disabled = true; setTimeout(() => btn.disabled = false, 700); } catch (e) {}
         socket.emit('react', { messageId: mid, emoji: em });
       });
       reactionsInner.appendChild(btn);
     });
-    // allow adding a new reaction quickly
+    // allow adding a new reaction quickly (mini picker)
     const picker = document.createElement('div'); picker.className = 'reaction-picker';
     ['👍','❤️','😂','😮','😢','👏'].forEach(em => {
       const pbtn = document.createElement('button'); pbtn.className = 'reaction-mini'; pbtn.textContent = em;
-      pbtn.addEventListener('click', () => socket.emit('react', { messageId: mid, emoji: em }));
+      pbtn.addEventListener('click', (ev) => { ev.stopPropagation(); // don't bubble
+        // disable mini buttons briefly
+        try { pbtn.disabled = true; setTimeout(() => pbtn.disabled = false, 700); } catch (e) {}
+        socket.emit('react', { messageId: mid, emoji: em });
+      });
       picker.appendChild(pbtn);
     });
     reactionsInner.appendChild(picker);
+
+    // If current user already reacted to this message, lock reactions UI and show Change button
+    try {
+      const myEmoji = Object.keys(reactions).find(em => (reactions[em]||[]).some(u => u.id === socket.id));
+      if (myEmoji) {
+        lockReactionsUI(mid);
+      } else {
+        unlockReactionsUI(mid);
+      }
+    } catch (e) {}
   });
 
   // message send + upload flow
@@ -664,6 +772,30 @@
   async function handlePasteEvent(e) {
     try {
       if (!me) return; // require joined
+      // First, check for HTML clipboard content which may contain an <img src="..."> with a GIF URL
+      try {
+        const html = (e.clipboardData && e.clipboardData.getData && e.clipboardData.getData('text/html')) || '';
+        if (html) {
+          // look for src attributes containing .gif or common gif hosts
+          const re = /<img[^>]+src=["']?([^"'\s>]+)["']?/i;
+          const m = html.match(re);
+          if (m && m[1]) {
+            const src = m[1];
+            // prefer GIFs (by extension or known hosts)
+            if (/\.gif($|\?|#)/i.test(src) || /giphy\.com|media\.giphy\.com|tenor\.com|cdn\.tenor\.com/i.test(src)) {
+              e.preventDefault();
+              pendingAttachment = { file: null, url: src, mime: 'image/gif', originalName: 'pasted.gif', isGif: true };
+              showAttachmentPreview(pendingAttachment);
+              if (messageInput) messageInput.focus();
+              return;
+            }
+          }
+        }
+      } catch (errHtml) {
+        // ignore
+      }
+
+      // Next, check for plain clipboard items (files or plain gif URLs)
       const items = (e.clipboardData && e.clipboardData.items) || [];
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
@@ -673,14 +805,28 @@
           // only accept image/audio/video types
           if (!file.type || !(file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/'))) continue;
           e.preventDefault();
-          // queue attachment and show preview instead of auto-sending
-          pendingAttachment = { file, url: null, mime: file.type, originalName: file.name || 'pasted', isGif: false };
+          // If the file is an image/gif, preserve that
+          const isGifFile = file.type === 'image/gif' || /\.gif($|\?|#)/i.test(file.name || '');
+          pendingAttachment = { file, url: null, mime: file.type, originalName: file.name || 'pasted', isGif: !!isGifFile };
           showAttachmentPreview(pendingAttachment);
           // focus message input so user can add text before sending
           if (messageInput) messageInput.focus();
           return;
         }
       }
+
+      // Finally, if clipboard contains a plain text URL to a GIF, accept that
+      try {
+        const txt = (e.clipboardData && e.clipboardData.getData && e.clipboardData.getData('text/plain')) || '';
+        if (txt && /https?:\/\/.+\.gif(\?|#|$)/i.test(txt.trim())) {
+          const url = txt.trim();
+          e.preventDefault();
+          pendingAttachment = { file: null, url, mime: 'image/gif', originalName: 'pasted.gif', isGif: true };
+          showAttachmentPreview(pendingAttachment);
+          if (messageInput) messageInput.focus();
+          return;
+        }
+      } catch (errTxt) {}
     } catch (err) {
       console.error('Paste handling error', err);
     }
@@ -714,6 +860,17 @@
 
   function closeLightbox() {
     if (!lightbox) return;
+    // if in fullscreen, exit fullscreen first so the close action works in fullscreen video mode
+    try {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+      if (fsEl) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    } catch (e) {}
     lightbox.classList.add('hidden'); lightbox.setAttribute('aria-hidden', 'true');
     if (lbMedia) lbMedia.innerHTML = '';
     document.body.style.overflow = '';
