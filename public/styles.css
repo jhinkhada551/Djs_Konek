@@ -29,6 +29,27 @@ h1{margin:0;font-size:20px}
 .text{margin-top:8px;font-size:16px;line-height:1.4}
 .file{margin-top:8px}
 .media{max-width:760px;border-radius:10px}
+/* thumbnail variant for pasted/preview media */
+.media.thumbnail{max-width:360px;max-height:240px;object-fit:cover;cursor:pointer}
+
+/* download button next to media */
+.download-btn{display:inline-block;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);color:var(--text);padding:6px 8px;border-radius:8px;text-decoration:none;font-size:13px}
+.download-btn:hover{background:rgba(255,255,255,0.05)}
+
+/* Lightbox styles */
+#lightbox{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1000}
+.lightbox-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.7)}
+.lightbox-panel{position:relative;z-index:1010;max-width:95%;max-height:95%;background:transparent;padding:12px;border-radius:10px;display:flex;flex-direction:column;align-items:center}
+.lb-close{position:absolute;right:8px;top:8px;background:rgba(0,0,0,0.5);border:none;color:white;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer}
+.lb-media img,.lb-media video{max-width:100%;max-height:80vh;border-radius:8px;display:block}
+.lb-download{margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(255,255,255,0.04);color:var(--text);text-decoration:none}
+.hidden[aria-hidden="true"]{display:none}
+
+@media (max-width:520px){
+	.lightbox-panel{padding:8px}
+	.lb-close{width:36px;height:36px;font-size:20px}
+	.lb-download{width:100%;text-align:center}
+}
 .sys{text-align:center;color:var(--muted);font-size:13px;margin:8px 0}
 .message-form{display:flex;gap:8px;align-items:center}
 .message-form input[type="file"]{padding:6px}
@@ -57,12 +78,19 @@ h1{margin:0;font-size:20px}
 	header{flex-direction:column;align-items:flex-start}
 	#messages{height:52vh}
 	.message{gap:8px}
-	.avatar{width:40px;height:40px}
-	.miniavatar{width:28px;height:28px}
+	.avatar{width:44px;height:44px}
+	.miniavatar{width:32px;height:32px}
 	#joinSection{margin:10vh auto;padding:18px}
 	.card{border-radius:10px}
-	.message-form{position:fixed;left:8px;right:8px;bottom:10px;padding:8px;background:rgba(2,6,23,0.6);backdrop-filter:blur(6px);border-radius:12px}
-	#chatArea{padding-bottom:70px}
+	/* fixed input bar at bottom - increase padding so messages are visible above it */
+	.message-form{position:fixed;left:8px;right:8px;bottom:10px;padding:10px;background:rgba(2,6,23,0.72);backdrop-filter:blur(6px);border-radius:12px;z-index:30;display:flex;gap:8px;align-items:center}
+	#chatArea{padding-bottom:110px}
+	/* make media thumbnails responsive and touch-friendly on small screens */
+	.media.thumbnail{max-width:100%;max-height:50vh;object-fit:contain;border-radius:10px}
+	.download-btn{display:block;width:100%;margin:8px 0 0 0;padding:10px 12px;text-align:center}
+	.message-form input[type="text"], .message-form input:not([type=file]){padding:12px;font-size:16px}
+	.message-form button{padding:12px 14px}
+	.reaction-btn, .reaction-mini{padding:8px}
 }
 
 /* larger overall UI */

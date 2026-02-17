@@ -14,6 +14,10 @@
   const messageInput = document.getElementById('messageInput');
   const fileInput = document.getElementById('fileInput');
   const typingEl = document.getElementById('typing');
+  const lightbox = document.getElementById('lightbox');
+  const lbMedia = lightbox ? lightbox.querySelector('[data-role="media"]') : null;
+  const lbDownload = lightbox ? lightbox.querySelector('[data-role="download"]') : null;
+  const lbBackdrop = lightbox ? lightbox.querySelector('[data-role="backdrop"]') : null;
 
   let me = null;
   let typingTimeout = null;
@@ -103,14 +107,28 @@
   if (m.file) {
       const f = m.file;
       const container = document.createElement('div'); container.className = 'file';
+      // Create media element with a small thumbnail preview, click to open full size, and a download button
       if (f.mime.startsWith('image/')) {
-        const img = document.createElement('img'); img.src = f.url; img.alt = f.originalName || 'image'; img.className = 'media'; container.appendChild(img);
+        const img = document.createElement('img'); img.src = f.url; img.alt = f.originalName || 'image'; img.className = 'media thumbnail';
+        img.style.cursor = 'pointer';
+        img.addEventListener('click', () => openLightbox(f.url, f.mime, f.originalName));
+        container.appendChild(img);
+        // download button
+        const dl = document.createElement('a'); dl.href = f.url; dl.className = 'download-btn'; dl.textContent = 'Download'; dl.setAttribute('download', f.originalName || 'image'); dl.style.marginLeft = '8px'; container.appendChild(dl);
       } else if (f.mime.startsWith('video/')) {
-        const v = document.createElement('video'); v.src = f.url; v.controls = true; v.className = 'media'; container.appendChild(v);
+        const wrapper = document.createElement('div'); wrapper.className = 'video-wrap';
+        const v = document.createElement('video'); v.src = f.url; v.controls = true; v.preload = 'none'; v.className = 'media thumbnail'; v.style.cursor = 'pointer';
+        // clicking opens the media in the page lightbox
+        v.addEventListener('click', () => openLightbox(f.url, f.mime, f.originalName));
+        wrapper.appendChild(v);
+        container.appendChild(wrapper);
+        const dl = document.createElement('a'); dl.href = f.url; dl.className = 'download-btn'; dl.textContent = 'Download'; dl.setAttribute('download', f.originalName || 'video'); dl.style.marginLeft = '8px'; container.appendChild(dl);
       } else if (f.mime.startsWith('audio/')) {
-        const a = document.createElement('audio'); a.src = f.url; a.controls = true; container.appendChild(a);
+        const a = document.createElement('audio'); a.src = f.url; a.controls = true; a.preload = 'none'; container.appendChild(a);
+        const dl = document.createElement('a'); dl.href = f.url; dl.className = 'download-btn'; dl.textContent = 'Download'; dl.setAttribute('download', f.originalName || 'audio'); dl.style.marginLeft = '8px'; container.appendChild(dl);
       } else {
         const a = document.createElement('a'); a.href = f.url; a.textContent = f.originalName || 'file'; a.target = '_blank'; container.appendChild(a);
+        const dl = document.createElement('a'); dl.href = f.url; dl.className = 'download-btn'; dl.textContent = 'Download'; dl.setAttribute('download', f.originalName || 'file'); dl.style.marginLeft = '8px'; container.appendChild(dl);
       }
       body.appendChild(container);
     }
@@ -311,5 +329,72 @@
     if (typingTimeout) clearTimeout(typingTimeout);
     typingTimeout = setTimeout(() => { socket.emit('typing', false); }, 1200);
   });
+
+  // Paste-to-upload support: allow users to paste images/videos/audio from clipboard
+  async function handlePasteEvent(e) {
+    try {
+      if (!me) return; // require joined
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.kind === 'file') {
+          const file = it.getAsFile();
+          if (!file) continue;
+          // only accept image/audio/video types
+          if (!file.type || !(file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/'))) continue;
+          e.preventDefault();
+          const fd = new FormData();
+          fd.append('file', file, file.name || 'pasted');
+          const res = await fetch('/upload', { method: 'POST', body: fd });
+          if (!res.ok) { console.warn('Paste upload failed'); continue; }
+          const j = await res.json();
+          const fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+          socket.emit('message', { text: '', file: fileInfo });
+        }
+      }
+    } catch (err) {
+      console.error('Paste upload error', err);
+    }
+  }
+
+  document.addEventListener('paste', (e) => { handlePasteEvent(e); });
+
+  // Lightbox open/close helpers
+  function openLightbox(url, mime, name) {
+    if (!lightbox || !lbMedia) { window.open(url, '_blank', 'noopener'); return; }
+    // clear existing
+    lbMedia.innerHTML = '';
+    let el = null;
+    if (mime && mime.startsWith('image/')) {
+      el = document.createElement('img'); el.src = url; el.alt = name || 'image';
+    } else if (mime && mime.startsWith('video/')) {
+      el = document.createElement('video'); el.src = url; el.controls = true; el.preload = 'metadata'; el.playsInline = true;
+    } else if (mime && mime.startsWith('audio/')) {
+      el = document.createElement('audio'); el.src = url; el.controls = true; el.preload = 'metadata';
+    } else {
+      // fallback - open in new tab
+      window.open(url, '_blank', 'noopener'); return;
+    }
+    el.className = 'lb-inner-media';
+    lbMedia.appendChild(el);
+    // set download link
+    if (lbDownload) { lbDownload.href = url; lbDownload.setAttribute('download', name || 'file'); }
+    lightbox.classList.remove('hidden'); lightbox.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    if (!lightbox) return;
+    lightbox.classList.add('hidden'); lightbox.setAttribute('aria-hidden', 'true');
+    if (lbMedia) lbMedia.innerHTML = '';
+    document.body.style.overflow = '';
+  }
+
+  if (lightbox) {
+    const closeBtn = lightbox.querySelector('.lb-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeLightbox);
+    if (lbBackdrop) lbBackdrop.addEventListener('click', closeLightbox);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeLightbox(); });
+  }
 
 })();

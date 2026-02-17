@@ -44,6 +44,15 @@
       </section>
     </main>
 
+    <!-- Lightbox modal for viewing images/videos inline -->
+    <div id="lightbox" class="hidden" aria-hidden="true">
+      <div class="lightbox-backdrop" data-role="backdrop"></div>
+      <div class="lightbox-panel" role="dialog" aria-modal="true">
+        <button class="lb-close" aria-label="Close">×</button>
+        <div class="lb-media" data-role="media"></div>
+        <a class="lb-download" data-role="download" download>Download</a>
+      </div>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
     <footer id="watermark">Developed by JHIN</footer>
