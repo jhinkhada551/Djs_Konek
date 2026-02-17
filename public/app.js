@@ -24,6 +24,14 @@
   const seenLocal = new Set();
   let observer = null;
   let lastSentMessageId = null;
+  // Jump-to-latest button
+  const jumpBtn = document.createElement('button');
+  jumpBtn.className = 'jump-latest hidden';
+  jumpBtn.textContent = 'Latest';
+  jumpBtn.title = 'Jump to latest message';
+  // append to chatArea
+  const chatArea = document.getElementById('chatArea');
+  if (chatArea) chatArea.appendChild(jumpBtn);
 
   // notification sound using Web Audio API
   function playNotificationSound() {
@@ -219,7 +227,42 @@
         }
       }
     });
+    // scroll to latest message on history load
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    // briefly highlight the latest message
+    const lastMsg = messagesEl.querySelector('.message:last-child');
+    if (lastMsg) {
+      lastMsg.classList.add('highlight');
+      setTimeout(() => lastMsg.classList.remove('highlight'), 2200);
+    }
+  });
+
+  // Show/hide jump-to-latest button depending on scroll position
+  function updateJumpButton() {
+    const threshold = 160; // px from bottom
+    const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= threshold;
+    if (!atBottom) jumpBtn.classList.remove('hidden'); else jumpBtn.classList.add('hidden');
+  }
+
+  messagesEl.addEventListener('scroll', () => {
+    updateJumpButton();
+  });
+
+  jumpBtn.addEventListener('click', () => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    jumpBtn.classList.add('hidden');
+    // mark visible messages as seen will happen via intersection observer
+  });
+
+  // Listen for message deletions from the server
+  socket.on('message-delete', (p) => {
+    try {
+      const ids = (p && p.ids) || [];
+      ids.forEach(id => {
+        const el = messagesEl.querySelector(`.message[data-id="${id}"]`);
+        if (el) el.remove();
+      });
+    } catch (e) { console.error('message-delete handling error', e); }
   });
 
   // seen updates from server

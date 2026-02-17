@@ -71,6 +71,14 @@ h1{margin:0;font-size:20px}
 .seen-avatar{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:white;font-size:11px;box-shadow:0 2px 6px rgba(2,6,23,0.6)}
 .seen-more{font-size:12px;color:var(--muted)}
 
+/* jump to latest button */
+.jump-latest{position:fixed;right:18px;bottom:92px;background:linear-gradient(90deg,#00c6ff,#0072ff);border:none;color:white;padding:8px 12px;border-radius:20px;box-shadow:0 8px 20px rgba(2,6,23,0.6);cursor:pointer;z-index:60}
+.jump-latest.hidden{display:none}
+
+/* highlight for most recent message */
+.message.highlight{box-shadow:0 6px 18px rgba(0,0,0,0.6);border-radius:12px;animation:hl 2s ease-in-out}
+@keyframes hl{0%{transform:translateY(4px);opacity:0.9}50%{transform:translateY(0);opacity:1}100%{transform:none;opacity:1}}
+
 @media (max-width:1000px){#chatSection{grid-template-columns:1fr} #sidebar{order:2;height:180px;overflow:auto}}
 
 @media (max-width:520px){

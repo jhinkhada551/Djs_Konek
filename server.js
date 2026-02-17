@@ -317,6 +317,75 @@ server.listen(PORT, () => {
   }
 });
 
+// Cleanup messages older than 3 days (in ms)
+const MESSAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+function cleanupOldMessages() {
+  try {
+    const cutoff = Date.now() - MESSAGE_TTL_MS;
+    const deletedIds = [];
+    if (useSqlite && db) {
+      db.all(`SELECT id, file FROM messages WHERE ts < ?`, [cutoff], (err, rows) => {
+        if (err) return console.error('cleanup: sqlite select error', err);
+        const filesToDelete = [];
+        (rows || []).forEach(r => {
+          deletedIds.push(r.id);
+          try {
+            const f = JSON.parse(r.file || 'null');
+            if (f && f.url && f.url.startsWith('/uploads/')) filesToDelete.push(path.join(__dirname, f.url));
+          } catch (e) {}
+        });
+        if (deletedIds.length === 0) return;
+        db.run(`DELETE FROM messages WHERE ts < ?`, [cutoff], function(delErr) {
+          if (delErr) return console.error('cleanup: sqlite delete error', delErr);
+          console.log('cleanup: deleted messages (sqlite):', deletedIds.length);
+          // remove files
+          filesToDelete.forEach(p => {
+            try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { console.warn('cleanup unlink error', p, e.message); }
+          });
+          // clean in-memory maps
+          deletedIds.forEach(id => { messagesSeen.delete(id); reactionsMap.delete(id); });
+          io.emit('message-delete', { ids: deletedIds });
+        });
+      });
+    } else {
+      // JSON fallback
+      try {
+        const list = JSON.parse(fs.readFileSync(jsonFile, 'utf8') || '[]');
+        const keep = [];
+        const filesToDelete = [];
+        list.forEach(item => {
+          const ts = item.ts || 0;
+          if (ts < cutoff) {
+            deletedIds.push(item.id);
+            try {
+              const f = JSON.parse(item.file || 'null');
+              if (f && f.url && f.url.startsWith('/uploads/')) filesToDelete.push(path.join(__dirname, f.url));
+            } catch (e) {}
+          } else {
+            keep.push(item);
+          }
+        });
+        if (deletedIds.length > 0) {
+          fs.writeFileSync(jsonFile, JSON.stringify(keep.slice(-1000), null, 2), 'utf8');
+          filesToDelete.forEach(p => { try { if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) { console.warn('cleanup unlink error', p, e.message); } });
+          deletedIds.forEach(id => { messagesSeen.delete(id); reactionsMap.delete(id); });
+          console.log('cleanup: deleted messages (json):', deletedIds.length);
+          io.emit('message-delete', { ids: deletedIds });
+        }
+      } catch (e) {
+        console.error('cleanup: json fallback error', e);
+      }
+    }
+  } catch (e) {
+    console.error('cleanupOldMessages error', e);
+  }
+}
+
+// Run cleanup on startup and every hour
+try { cleanupOldMessages(); } catch (e) {}
+setInterval(cleanupOldMessages, 60 * 60 * 1000);
+
 // Better logging for unexpected crashes to help platform diagnostics
 process.on('uncaughtException', (err) => {
   // If this looks like a Mongo connection refusal, log but do not crash the process
