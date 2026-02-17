@@ -307,4 +307,25 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  try {
+    const addr = server.address();
+    console.log('Server address info:', addr);
+  } catch (e) {
+    // ignore
+  }
+});
+
+// Better logging for unexpected crashes to help platform diagnostics
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err && err.stack ? err.stack : err);
+  // exit after logging so the platform/crash detector can restart the process
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, p) => {
+  console.error('Unhandled Rejection at:', p, 'reason:', reason);
+  // exit after logging; platform should restart the process
+  process.exit(1);
+});
