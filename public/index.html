@@ -37,13 +37,11 @@
           <div id="typing"></div>
 
           <form id="messageForm" class="card message-form">
-            <input id="messageInput" placeholder="Write a message..." autocomplete="off" />
               <div class="input-row">
                 <input id="messageInput" placeholder="Write a message..." autocomplete="off" />
                 <div class="controls">
                   <button type="button" id="emojiBtn" title="Emoji">😊</button>
-                  <button type="button" id="gifBtn" title="GIF">GIF</button>
-                  <label class="file-label">📎<input id="fileInput" type="file" accept="image/*,image/gif,audio/*,video/*" /></label>
+                  <label class="file-label">📎<input id="fileInput" type="file" accept="image/*,audio/*,video/*" /></label>
                   <button type="submit">Send</button>
                 </div>
               </div>
@@ -62,6 +60,10 @@
         <div class="lb-media" data-role="media"></div>
         <a class="lb-download" data-role="download" download>Download</a>
       </div>
+    </div>
+    <!-- Global loader -->
+    <div id="globalLoader" class="hidden" aria-hidden="true">
+      <div class="spinner" aria-hidden="true"></div>
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>

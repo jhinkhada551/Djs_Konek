@@ -17,7 +17,6 @@
   const attachmentPreviewEl = document.getElementById('attachmentPreview');
   const profanityWarningEl = document.getElementById('profanityWarning');
   const emojiBtn = document.getElementById('emojiBtn');
-  const gifBtn = document.getElementById('gifBtn');
   const lightbox = document.getElementById('lightbox');
   const lbMedia = lightbox ? lightbox.querySelector('[data-role="media"]') : null;
   const lbDownload = lightbox ? lightbox.querySelector('[data-role="download"]') : null;
@@ -40,12 +39,25 @@
   // Attachment state (queued until user presses Send)
   let pendingAttachment = null; // { file, url, mime, originalName, isGif }
 
-  // Emoji & GIF data (small curated set)
+  // quick reaction emoji set
+  const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','👏','🔥'];
+
+  // single floating reaction picker reused for all messages
+  const reactionPicker = document.createElement('div'); reactionPicker.className = 'reaction-picker-pop';
+  REACTION_EMOJIS.forEach(em => { const b = document.createElement('button'); b.type='button'; b.className='reaction-mini'; b.textContent = em; b.addEventListener('click', () => {
+    const targetMid = reactionPicker.dataset.mid; if (targetMid) socket.emit('react', { messageId: targetMid, emoji: em }); reactionPicker.style.display='none';
+  }); reactionPicker.appendChild(b); });
+  reactionPicker.style.position='absolute'; reactionPicker.style.display='none'; reactionPicker.style.zIndex='220'; document.body.appendChild(reactionPicker);
+
+  function showReactionPickerForMessage(mid, anchorEl) {
+    if (!anchorEl) return;
+    const r = anchorEl.getBoundingClientRect();
+    reactionPicker.style.left = (r.left) + 'px'; reactionPicker.style.top = (r.bottom + 6) + 'px';
+    reactionPicker.dataset.mid = mid; reactionPicker.style.display = 'block';
+  }
+
+  // Emoji data (small curated set)
   const EMOJIS = ['😊','😂','❤️','👍','🔥','😮','😢','🎉','👏','🙌','😉','😎'];
-  const GIFS = [
-    '/uploads/sample-gif-1.gif','/uploads/sample-gif-2.gif','/uploads/sample-gif-3.gif',
-    'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif','https://media.giphy.com/media/l0HlQ7LRalQw1zT7W/giphy.gif'
-  ];
 
   // Profanity lists (simple, extendable) - English and Filipino (examples)
   const PROFANITY = [
@@ -85,15 +97,7 @@
   }); emojiGrid.appendChild(b); });
   emojiPicker.appendChild(emojiGrid); document.body.appendChild(emojiPicker);
 
-  const gifPicker = document.createElement('div'); gifPicker.className='gif-picker';
-  const gifGrid = document.createElement('div'); gifGrid.className='gif-grid';
-  GIFS.forEach(url => { const img = document.createElement('img'); img.src = url; img.addEventListener('click', () => {
-    // set pendingAttachment as gif (no upload)
-    pendingAttachment = { file: null, url, mime: 'image/gif', originalName: 'gif.gif', isGif: true };
-    showAttachmentPreview(pendingAttachment);
-    gifPicker.style.display='none';
-  }); gifGrid.appendChild(img); });
-  gifPicker.appendChild(gifGrid); document.body.appendChild(gifPicker);
+  // GIF picker removed per user request. GIFs can still be attached via file input or remote URLs if needed.
 
   // helper to insert emoji at cursor
   function insertAtCursor(el, text) {
@@ -106,9 +110,7 @@
   // show/hide pickers
   emojiBtn.addEventListener('click', (e)=>{
     const r = emojiBtn.getBoundingClientRect(); emojiPicker.style.left = (r.left)+'px'; emojiPicker.style.top = (r.bottom+6)+'px'; emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none':'block';
-    gifPicker.style.display='none';
   });
-  gifBtn.addEventListener('click', ()=>{ const r = gifBtn.getBoundingClientRect(); gifPicker.style.left=(r.left)+'px'; gifPicker.style.top=(r.bottom+6)+'px'; gifPicker.style.display = gifPicker.style.display === 'block' ? 'none':'block'; emojiPicker.style.display='none'; });
 
   // show attachment preview
   function showAttachmentPreview(att) {
@@ -266,11 +268,40 @@
   reactionsWrap.appendChild(reactionsInner);
   body.appendChild(reactionsWrap);
 
+  // populate existing reactions if present on the message object (from history or server)
+  try {
+    const existing = m.reactions || {};
+    Object.keys(existing).forEach(em => {
+      const arr = existing[em] || [];
+      const btn = document.createElement('button'); btn.className = 'reaction-btn'; btn.textContent = `${em} ${arr.length}`;
+      // highlight if me reacted (we only know my socket id later; use socket.id)
+      const reacted = arr.find(a => a.id === socket.id);
+      if (reacted) btn.classList.add('reacted');
+      btn.addEventListener('click', () => {
+        socket.emit('react', { messageId: m.id, emoji: em });
+      });
+      reactionsInner.appendChild(btn);
+    });
+  } catch (e) {}
+
+  // add a quick reaction picker trigger
+  const addReact = document.createElement('button'); addReact.type = 'button'; addReact.className = 'reaction-add'; addReact.textContent = '+';
+  addReact.title = 'Add reaction';
+  addReact.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    showReactionPickerForMessage(m.id, addReact);
+  });
+  reactionsInner.appendChild(addReact);
+
   // seen receipts container (shown only for your most recent sent message)
   const seenWrap = document.createElement('div'); seenWrap.className = 'seen-wrap';
   const seenInner = document.createElement('div'); seenInner.className = 'seen-inner';
   seenWrap.appendChild(seenInner);
   box.appendChild(seenWrap);
+
+  // status element (for optimistic UI)
+  const statusEl = document.createElement('div'); statusEl.className = 'status';
+  box.appendChild(statusEl);
 
     return box;
   }
@@ -312,14 +343,35 @@
   });
 
   socket.on('message', (m) => {
-    const node = renderMessage(m);
-    messagesEl.appendChild(node);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    // Do not immediately mark as seen; observe and emit when visible
-    if (m.id) {
-      ensureObserver().observe(node);
+    // If this message corresponds to a clientTempId (optimistic), find the temp node and reconcile
+    if (m.clientTempId) {
+      const tempEl = messagesEl.querySelector(`.message[data-temp-id="${m.clientTempId}"]`);
+      if (tempEl) {
+        // update dataset id
+        tempEl.dataset.id = m.id || '';
+        tempEl.removeAttribute('data-temp-id');
+        tempEl.classList.remove('sending');
+        // update media src if present (replace objectURL with real URL)
+        try {
+          const img = tempEl.querySelector('img');
+          const vid = tempEl.querySelector('video');
+          if (m.file && m.file.url) {
+            if (img) img.src = m.file.url;
+            if (vid) vid.src = m.file.url;
+          }
+        } catch (e) {}
+        // observe for seen events
+        try { if (m.id) ensureObserver().observe(tempEl); } catch (e) {}
+      }
+    } else {
+      const node = renderMessage(m);
+      messagesEl.appendChild(node);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Do not immediately mark as seen; observe and emit when visible
+      if (m.id) ensureObserver().observe(node);
     }
-    // set lastSentMessageId when a message from me arrives
+
+    // set lastSentMessageId when a message from me arrives (server id)
     if (m.from && m.from.id && m.from.id === socket.id) {
       lastSentMessageId = m.id;
     } else {
@@ -462,39 +514,86 @@
     // profanity detection
     const bad = detectProfanity(text);
     if (bad.length > 0) {
-      // show warning and censor on confirm
       const censored = censorText(text);
       const ok = confirm('Profanity detected (' + bad.join(', ') + '). The message will be censored. Continue?');
       if (!ok) return;
       text = censored;
     }
 
-    // determine attachment to send: pendingAttachment (from paste/file/gif) or none
-    let fileInfo = null;
-    if (pendingAttachment) {
-      if (pendingAttachment.file) {
-        // upload file
-        const fd = new FormData(); fd.append('file', pendingAttachment.file, pendingAttachment.originalName || 'upload');
-        const res = await fetch('/upload', { method: 'POST', body: fd });
-        if (!res.ok) { alert('Upload failed'); return; }
-        const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
-      } else if (pendingAttachment.url) {
-        // GIF or remote URL - send as-is
-        fileInfo = { url: pendingAttachment.url, mime: pendingAttachment.mime || 'image/gif', originalName: pendingAttachment.originalName || 'gif' };
-      }
-    } else if (fileInput.files && fileInput.files[0]) {
-      // fallback if fileInput used directly
-      const f = fileInput.files[0]; const fd = new FormData(); fd.append('file', f);
-      const res = await fetch('/upload', { method: 'POST', body: fd });
-      if (!res.ok) { alert('Upload failed'); return; }
-      const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+    // require something to send
+    if (!text && !pendingAttachment && !(fileInput.files && fileInput.files[0])) {
+      alert('Please enter a message or attach a file before sending.');
+      return;
     }
 
-    if (!text && !fileInfo) { alert('Please enter a message or attach a file before sending.'); return; }
+    // create optimistic temp message and render immediately
+    const tempId = 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
+    const tempMsg = {
+      id: tempId,
+      from: { id: socket.id, name: me.name, group: me.group, avatar: me.avatar },
+      text: text,
+      file: null,
+      ts: Date.now(),
+      reactions: {}
+    };
+    // if there's a pendingAttachment with preview URL, attach preview for optimistic display
+    if (pendingAttachment && pendingAttachment._objectUrl) {
+      tempMsg.file = { url: pendingAttachment._objectUrl, mime: pendingAttachment.mime, originalName: pendingAttachment.originalName };
+    } else if (fileInput.files && fileInput.files[0]) {
+      const f = fileInput.files[0]; const obj = URL.createObjectURL(f); tempMsg.file = { url: obj, mime: f.type, originalName: f.name }; tempMsg._localFile = f;
+    }
 
-    socket.emit('message', { text, file: fileInfo });
+    const node = renderMessage(tempMsg);
+    // mark as temp/sending
+    node.dataset.tempId = tempId; node.classList.add('sending');
+    const st = node.querySelector('.status'); if (st) st.innerHTML = '<span class="spinner" aria-hidden="true"></span><span class="status-text">Sending</span>';
+    messagesEl.appendChild(node); messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    // perform upload if necessary
+    let fileInfo = null;
+    try {
+      if (pendingAttachment && pendingAttachment.file) {
+        // show global loader
+        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
+        const fd = new FormData(); fd.append('file', pendingAttachment.file, pendingAttachment.originalName || 'upload');
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error('upload-failed');
+        const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
+      } else if (fileInput.files && fileInput.files[0]) {
+        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.remove('hidden');
+        const f = fileInput.files[0]; const fd = new FormData(); fd.append('file', f);
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error('upload-failed');
+        const j = await res.json(); fileInfo = { url: j.url, mime: j.mime, originalName: j.originalName };
+        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
+      }
+    } catch (err) {
+      // mark node as failed
+      node.classList.add('failed'); node.classList.remove('sending');
+      const st2 = node.querySelector('.status'); if (st2) st2.innerHTML = '<span class="status-text">Upload failed</span><button class="retry">Retry</button>';
+      const retryBtn = node.querySelector('.retry'); if (retryBtn) retryBtn.addEventListener('click', () => {
+        // simple approach: reload page to retry or user can try sending again
+        window.location.reload();
+      });
+      // clear pending attachment but leave preview so user can re-attach
+      return;
+    }
+
+    // now send the message via socket with clientTempId so server can reconcile
+    const sendPayload = { text: text, file: fileInfo, clientTempId: tempId };
+    socket.emit('message', sendPayload, (ack) => {
+      if (!ack || !ack.ok) {
+        // mark failed
+        node.classList.add('failed'); node.classList.remove('sending');
+        const st3 = node.querySelector('.status'); if (st3) st3.innerHTML = '<span class="status-text">Send failed</span>';
+      } else {
+        // optimistic reconciliation will be done when server emits the canonical message
+      }
+    });
+
+    // reset UI inputs
     messageInput.value = '';
-    // clear pending and input
     pendingAttachment = null; clearAttachmentPreview(); if (fileInput) fileInput.value = '';
     socket.emit('typing', false);
   });
@@ -518,7 +617,7 @@
   // click outside to close pickers
   document.addEventListener('click', (e) => {
     if (emojiPicker && !emojiPicker.contains(e.target) && e.target !== emojiBtn) emojiPicker.style.display='none';
-    if (gifPicker && !gifPicker.contains(e.target) && e.target !== gifBtn) gifPicker.style.display='none';
+    if (reactionPicker && !reactionPicker.contains(e.target) && !e.target.classList.contains('reaction-add')) reactionPicker.style.display='none';
   });
 
   // Paste-to-upload support: allow users to paste images/videos/audio from clipboard

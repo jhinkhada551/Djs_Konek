@@ -68,7 +68,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB limit (allow larger videos)
   fileFilter: function (req, file, cb) {
     // allow images, audio, video
     if (/^image\//.test(file.mimetype) || /^audio\//.test(file.mimetype) || /^video\//.test(file.mimetype)) {
@@ -121,7 +121,7 @@ io.on('connection', (socket) => {
   });
 
 
-  socket.on('message', (msg) => {
+  socket.on('message', (msg, cb) => {
     // msg: { text, file } file optional { url, mime, originalName }
     // validate: do not accept empty messages without files
     const textOnly = (msg && typeof msg.text === 'string') ? msg.text.trim() : '';
@@ -164,6 +164,7 @@ io.on('connection', (socket) => {
       from: { id: socket.id, name: user.name, group: user.group, avatar: user.avatar },
       text: msg.text || '',
       file: msg.file || null,
+      clientTempId: msg && msg.clientTempId ? msg.clientTempId : null,
       ts: Date.now()
     };
 
@@ -190,6 +191,10 @@ io.on('connection', (socket) => {
     io.emit('message', payload);
     // broadcast initial seen state
     io.emit('seen-update', { messageId, seen: Array.from(messagesSeen.get(messageId)).map(id => ({ id, ...(users.get(id) || {}) })) });
+    // acknowledge to sender (if callback provided)
+    try {
+      if (typeof cb === 'function') cb({ ok: true, id: messageId });
+    } catch (e) {}
   });
 
   // client notifies that they have seen one or more message ids
