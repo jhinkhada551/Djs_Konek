@@ -59,6 +59,33 @@
   }); reactionPicker.appendChild(b); });
   reactionPicker.style.position='absolute'; reactionPicker.style.display='none'; reactionPicker.style.zIndex='220'; document.body.appendChild(reactionPicker);
 
+  // reusable tooltip/popover to show who reacted
+  const reactionTooltip = document.createElement('div'); reactionTooltip.className = 'reaction-tooltip hidden';
+  reactionTooltip.style.position = 'absolute'; reactionTooltip.style.zIndex = 10050; reactionTooltip.style.display = 'none';
+  document.body.appendChild(reactionTooltip);
+
+  function showReactionTooltip(arr, anchorEl) {
+    if (!reactionTooltip || !anchorEl) return;
+    reactionTooltip.innerHTML = '';
+    if (!Array.isArray(arr) || arr.length === 0) {
+      const p = document.createElement('div'); p.className = 'rt-empty'; p.textContent = 'No reactions'; reactionTooltip.appendChild(p);
+    } else {
+      arr.forEach(u => {
+        const item = document.createElement('div'); item.className = 'rt-item';
+        const av = document.createElement('span'); av.className = 'rt-avatar'; av.textContent = (u.avatar && u.avatar.initials) ? u.avatar.initials : (u.name||'A').charAt(0).toUpperCase(); av.style.background = (u.avatar && u.avatar.color) ? u.avatar.color : '#666';
+        const name = document.createElement('span'); name.className = 'rt-name'; name.textContent = u.name + (u.group ? ' ('+u.group+')' : '');
+        item.appendChild(av); item.appendChild(name); reactionTooltip.appendChild(item);
+      });
+    }
+    // position near anchor
+    const r = anchorEl.getBoundingClientRect();
+    reactionTooltip.style.left = (Math.max(8, r.left)) + 'px';
+    reactionTooltip.style.top = (r.bottom + 8) + 'px';
+    reactionTooltip.style.display = 'block'; reactionTooltip.classList.remove('hidden');
+  }
+
+  function hideReactionTooltip() { if (!reactionTooltip) return; reactionTooltip.style.display='none'; reactionTooltip.classList.add('hidden'); }
+
   function showReactionPickerForMessage(mid, anchorEl) {
     if (!anchorEl) return;
     const r = anchorEl.getBoundingClientRect();
@@ -608,20 +635,44 @@
     if (!msgEl) return;
     const reactionsInner = msgEl.querySelector('.reactions-inner');
     if (!reactionsInner) return;
+    // Replace the reactions area with server-authoritative state
     reactionsInner.innerHTML = '';
+
+    // helper to detect if a server user object represents the current local user
+    function isSameUserObj(u) {
+      if (!u) return false;
+      try {
+        if (me && me.name) {
+          // match by name, group, and avatar fingerprint (safe best-effort for reconnects)
+          const a1 = (u.avatar && JSON.stringify(u.avatar)) || '';
+          const a2 = (me.avatar && JSON.stringify(me.avatar)) || '';
+          return u.name === me.name && (u.group || '') === (me.group || '') && a1 === a2;
+        }
+      } catch (e) {}
+      // fallback: if no saved `me`, try matching by socket id
+      return u.id === socket.id;
+    }
+
     Object.keys(reactions).forEach(em => {
       const arr = reactions[em] || [];
       const btn = document.createElement('button'); btn.className = 'reaction-btn'; btn.textContent = `${em} ${arr.length}`;
-      // highlight if me reacted
-      const reacted = arr.find(a => a.id === socket.id);
+      btn.dataset.emoji = em;
+      // highlight if current user is present in the server list (match by saved user info when possible)
+      const reacted = arr.find(a => isSameUserObj(a));
       if (reacted) btn.classList.add('reacted');
-      btn.addEventListener('click', () => {
-        // prevent multiple quick clicks
-        try { btn.disabled = true; setTimeout(() => btn.disabled = false, 700); } catch (e) {}
-        socket.emit('react', { messageId: mid, emoji: em });
+      // clicking or tapping a reaction shows who reacted (do not use it to toggle reaction)
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        // toggle tooltip visibility on click (useful for mobile)
+        if (reactionTooltip && reactionTooltip.style.display === 'block') { hideReactionTooltip(); return; }
+        showReactionTooltip(arr, btn);
       });
+      // also show on hover for desktop
+      btn.addEventListener('pointerenter', () => { try { showReactionTooltip(arr, btn); } catch (e) {} });
+      btn.addEventListener('pointerleave', () => { try { hideReactionTooltip(); } catch (e) {} });
       reactionsInner.appendChild(btn);
     });
+
     // allow adding a new reaction quickly (mini picker)
     const picker = document.createElement('div'); picker.className = 'reaction-picker';
     ['👍','❤️','😂','😮','😢','👏'].forEach(em => {
@@ -629,15 +680,16 @@
       pbtn.addEventListener('click', (ev) => { ev.stopPropagation(); // don't bubble
         // disable mini buttons briefly
         try { pbtn.disabled = true; setTimeout(() => pbtn.disabled = false, 700); } catch (e) {}
+        optimisticUpdateReaction(mid, em); // optimistic local update
         socket.emit('react', { messageId: mid, emoji: em });
       });
       picker.appendChild(pbtn);
     });
     reactionsInner.appendChild(picker);
 
-    // If current user already reacted to this message, lock reactions UI and show Change button
+    // If current user already reacted to this message (according to server), lock reactions UI and show Change button
     try {
-      const myEmoji = Object.keys(reactions).find(em => (reactions[em]||[]).some(u => u.id === socket.id));
+      const myEmoji = Object.keys(reactions).find(em => (reactions[em]||[]).some(u => isSameUserObj(u)));
       if (myEmoji) {
         lockReactionsUI(mid);
       } else {
