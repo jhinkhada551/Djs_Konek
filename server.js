@@ -42,16 +42,17 @@ const app = express();
 const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 app.use(cors({ origin: allowedOrigin }));
 
-// Basic security headers (lightweight; consider helmet for full protection)
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
-  res.setHeader('Permissions-Policy', 'geolocation=()');
-  // Content Security Policy: allow self resources, socket.io, and data/images
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' ws: wss: http: https:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data:;");
-  next();
-});
+  // Basic security headers (lightweight; consider helmet for full protection)
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+    res.setHeader('Permissions-Policy', 'geolocation=()');
+    // Content Security Policy: allow self resources, socket.io, data/blob images, and external https hosts (for pasted GIFs and Firebase storage)
+    // Note: tighten this in production to specific trusted domains if desired.
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' ws: wss: http: https:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data:;");
+    next();
+  });
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
