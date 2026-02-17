@@ -775,7 +775,13 @@
           try {
             const filename = (pendingAttachment.originalName || 'upload').replace(/[^a-zA-Z0-9.\-_]/g,'_');
             const ref = window._firebase_storage.ref().child('uploads/' + Date.now().toString(36) + '-' + filename);
-            const snap = await ref.put(pendingAttachment.file, { contentType: pendingAttachment.mime });
+            // ref.put returns an UploadTask (not a Promise) in the compat SDK; wrap it so we wait for completion
+            const uploadTask = ref.put(pendingAttachment.file, { contentType: pendingAttachment.mime });
+            const snap = await new Promise((resolve, reject) => {
+              try {
+                uploadTask.on('state_changed', null, (err) => reject(err), () => resolve(uploadTask.snapshot));
+              } catch (e) { reject(e); }
+            });
             const url = await snap.ref.getDownloadURL();
             fileInfo = { url: url, mime: pendingAttachment.mime, originalName: pendingAttachment.originalName };
           } catch (e) {
@@ -800,7 +806,12 @@
           try {
             const filename = (f.name || 'upload').replace(/[^a-zA-Z0-9.\-_]/g,'_');
             const ref = window._firebase_storage.ref().child('uploads/' + Date.now().toString(36) + '-' + filename);
-            const snap = await ref.put(f, { contentType: f.type });
+            const uploadTask = ref.put(f, { contentType: f.type });
+            const snap = await new Promise((resolve, reject) => {
+              try {
+                uploadTask.on('state_changed', null, (err) => reject(err), () => resolve(uploadTask.snapshot));
+              } catch (e) { reject(e); }
+            });
             const url = await snap.ref.getDownloadURL();
             fileInfo = { url: url, mime: f.type, originalName: f.name };
           } catch (e) {

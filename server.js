@@ -94,6 +94,50 @@ app.post('/upload', upload.single('file'), (req, res) => {
   res.json({ url, originalName: req.file.originalname, mime: req.file.mimetype });
 });
 
+// Proxy-download endpoint: fetch a remote URL and stream it to the client as an attachment.
+// Usage: /download?url=<encoded URL>
+app.get('/download', async (req, res) => {
+  const src = (req.query && req.query.url) ? String(req.query.url) : '';
+  if (!src || !/^https?:\/\//i.test(src)) return res.status(400).send('Invalid url');
+  try {
+    // Basic safety: disallow local/internal hosts
+    const u = new URL(src);
+    if (['localhost','127.0.0.1'].includes(u.hostname)) return res.status(400).send('Invalid host');
+  } catch (e) {
+    return res.status(400).send('Invalid url');
+  }
+
+  // Stream remote response to client with attachment headers
+  try {
+    const protocol = src.startsWith('https://') ? require('https') : require('http');
+    const request = protocol.get(src, { timeout: 15000 }, (remoteRes) => {
+      if (remoteRes.statusCode >= 400) {
+        res.status(502).send('Upstream error');
+        remoteRes.resume();
+        return;
+      }
+      // determine filename from header or url
+      let filename = 'download';
+      const cd = remoteRes.headers['content-disposition'];
+      if (cd && /filename=([^;]+)/i.test(cd)) {
+        filename = cd.match(/filename=([^;]+)/i)[1].replace(/['"\s]/g,'');
+      } else {
+        try { filename = src.split('/').pop().split('?')[0] || filename; } catch(e){}
+      }
+      const contentType = remoteRes.headers['content-type'] || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      // pipe
+      remoteRes.pipe(res);
+    });
+    request.on('error', (err) => { res.status(502).send('Fetch error'); });
+    request.on('timeout', () => { request.abort(); res.status(504).send('Timeout'); });
+  } catch (err) {
+    console.error('download proxy error', err && err.message);
+    res.status(500).send('Server error');
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
