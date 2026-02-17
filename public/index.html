@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ALL PINOY DJS — Chat</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="container">
+      <header id="siteHeader" class="hidden">
+        <h1>ALL PINOY DJS</h1>
+        <div id="online">Online: 0</div>
+      </header>
+
+      <section id="joinSection" class="card">
+        <h2>ALL PINOY DJS</h2>
+        <p class="lead">Enter your DJ name and optional group to join the public chat.</p>
+        <form id="joinForm">
+          <input id="nameInput" placeholder="DJ Name (e.g. DJ Angela)" required maxlength="40" />
+          <input id="groupInput" placeholder="Group / Club (optional)" maxlength="40" />
+          <button type="submit">Enter Chat</button>
+        </form>
+        <small>You'll get a profile icon automatically. Keep it friendly and respectful.</small>
+      </section>
+
+      <section id="chatSection" class="hidden">
+        <div id="sidebar" class="card">
+          <h3>Users</h3>
+          <ul id="usersList"></ul>
+        </div>
+
+        <div id="chatArea">
+          <div id="messages" class="card"></div>
+
+          <div id="typing"></div>
+
+          <form id="messageForm" class="card message-form">
+            <input id="messageInput" placeholder="Write a message..." autocomplete="off" />
+            <input id="fileInput" type="file" accept="image/*,audio/*,video/*" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+    <footer id="watermark">Developed by JHIN</footer>
+  </body>
+</html>

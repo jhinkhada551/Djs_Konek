@@ -1,0 +1,8 @@
+node_modules
+uploads
+data.db
+messages.json
+.DS_Store
+npm-debug.log
+.env
+.git
