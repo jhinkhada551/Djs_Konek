@@ -38,6 +38,9 @@ h1{margin:0;font-size:20px}
 
 /* Lightbox styles */
 #lightbox{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1000}
+#lightbox.hidden, #lightbox[aria-hidden="true"] { display: none !important; }
+/* Ensure lightbox is hidden when it has the hidden class or aria-hidden="true" (override #lightbox display) */
+#lightbox.hidden, #lightbox[aria-hidden="true"] { display: none !important; }
 .lightbox-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.7)}
 .lightbox-panel{position:relative;z-index:1010;max-width:95%;max-height:95%;background:transparent;padding:12px;border-radius:10px;display:flex;flex-direction:column;align-items:center}
 .lb-close{position:absolute;right:8px;top:8px;background:rgba(0,0,0,0.5);border:none;color:white;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer}
