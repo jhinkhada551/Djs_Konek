@@ -222,10 +222,20 @@ io.on('connection', (socket) => {
       mapForMsg = new Map();
       reactionsMap.set(mid, mapForMsg);
     }
+    // Enforce a single reaction per user per message.
+    // Remove this user's id from any other emoji sets for this message before toggling the chosen emoji.
+    try {
+      mapForMsg.forEach((sset, em) => {
+        if (em !== emoji && sset && sset.has(socket.id)) {
+          sset.delete(socket.id);
+        }
+      });
+    } catch (e) {}
+
     let setForEmoji = mapForMsg.get(emoji);
     if (!setForEmoji) setForEmoji = new Set();
 
-    // toggle
+    // If user already reacted with this emoji, toggle off; otherwise add.
     if (setForEmoji.has(socket.id)) {
       setForEmoji.delete(socket.id);
     } else {

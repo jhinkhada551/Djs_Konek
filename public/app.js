@@ -17,12 +17,16 @@
   const attachmentPreviewEl = document.getElementById('attachmentPreview');
   const profanityWarningEl = document.getElementById('profanityWarning');
   const emojiBtn = document.getElementById('emojiBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
   const lightbox = document.getElementById('lightbox');
   const lbMedia = lightbox ? lightbox.querySelector('[data-role="media"]') : null;
   const lbDownload = lightbox ? lightbox.querySelector('[data-role="download"]') : null;
   const lbBackdrop = lightbox ? lightbox.querySelector('[data-role="backdrop"]') : null;
 
   let me = null;
+  // try to restore saved user from localStorage
+  let _savedUser = null;
+  try { _savedUser = JSON.parse(localStorage.getItem('dj_user') || 'null'); } catch (e) { _savedUser = null; }
   let typingTimeout = null;
   const seenLocal = new Set();
   let observer = null;
@@ -111,6 +115,16 @@
   emojiBtn.addEventListener('click', (e)=>{
     const r = emojiBtn.getBoundingClientRect(); emojiPicker.style.left = (r.left)+'px'; emojiPicker.style.top = (r.bottom+6)+'px'; emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none':'block';
   });
+
+  // logout button handler: clear saved user and reload/disconnect
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+      try { localStorage.removeItem('dj_user'); } catch (e) {}
+      try { socket.disconnect(); } catch (e) {}
+      // reload to show join screen
+      window.location.reload();
+    });
+  }
 
   // show attachment preview
   function showAttachmentPreview(att) {
@@ -313,7 +327,10 @@
     const avatar = makeAvatar(name);
     me = { name, group, avatar };
     socket.emit('join', { name, group, avatar });
+    // persist user locally so refresh keeps them logged in
+    try { localStorage.setItem('dj_user', JSON.stringify(me)); } catch (e) {}
     showSection(true);
+    if (logoutBtn) logoutBtn.style.display = 'inline-block';
     // reveal header and focus message input
     const hdr = document.getElementById('siteHeader'); if (hdr) hdr.classList.remove('hidden');
     setTimeout(() => { if (messageInput) messageInput.focus(); }, 250);
@@ -342,6 +359,19 @@
     const info = document.createElement('div'); info.className = 'sys'; info.textContent = `${u.name} left.`; messagesEl.appendChild(info); messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 
+  // Auto-join if we have a saved user in localStorage (use socket connect to ensure socket id is ready)
+  socket.on('connect', () => {
+    if (_savedUser && !me) {
+      me = _savedUser;
+      try { socket.emit('join', { name: me.name, group: me.group, avatar: me.avatar }); } catch (e) {}
+      showSection(true);
+      const hdr = document.getElementById('siteHeader'); if (hdr) hdr.classList.remove('hidden');
+      if (logoutBtn) logoutBtn.style.display = 'inline-block';
+      setTimeout(() => { if (messageInput) messageInput.focus(); }, 250);
+      socket.emit('request-history', { limit: 300 });
+    }
+  });
+
   socket.on('message', (m) => {
     // If this message corresponds to a clientTempId (optimistic), find the temp node and reconcile
     if (m.clientTempId) {
@@ -360,6 +390,8 @@
             if (vid) vid.src = m.file.url;
           }
         } catch (e) {}
+        // clear per-message status area (spinner / sending text)
+        try { const st = tempEl.querySelector('.status'); if (st) st.innerHTML = ''; } catch (e) {}
         // observe for seen events
         try { if (m.id) ensureObserver().observe(tempEl); } catch (e) {}
       }
@@ -570,6 +602,8 @@
       }
     } catch (err) {
       // mark node as failed
+      // hide global loader if visible
+      if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
       node.classList.add('failed'); node.classList.remove('sending');
       const st2 = node.querySelector('.status'); if (st2) st2.innerHTML = '<span class="status-text">Upload failed</span><button class="retry">Retry</button>';
       const retryBtn = node.querySelector('.retry'); if (retryBtn) retryBtn.addEventListener('click', () => {
@@ -583,12 +617,18 @@
     // now send the message via socket with clientTempId so server can reconcile
     const sendPayload = { text: text, file: fileInfo, clientTempId: tempId };
     socket.emit('message', sendPayload, (ack) => {
+      try {
+        // hide global loader if it was shown
+        if (document.getElementById('globalLoader')) document.getElementById('globalLoader').classList.add('hidden');
+      } catch (e) {}
       if (!ack || !ack.ok) {
         // mark failed
         node.classList.add('failed'); node.classList.remove('sending');
         const st3 = node.querySelector('.status'); if (st3) st3.innerHTML = '<span class="status-text">Send failed</span>';
       } else {
-        // optimistic reconciliation will be done when server emits the canonical message
+        // server acknowledged quickly — remove spinner immediately for perceived speed
+        try { node.classList.remove('sending'); const st4 = node.querySelector('.status'); if (st4) st4.innerHTML = ''; } catch (e) {}
+        // optimistic reconciliation will still occur when the server emits the canonical message
       }
     });
 

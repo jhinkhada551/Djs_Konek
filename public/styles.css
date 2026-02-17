@@ -7,6 +7,9 @@ header{display:flex;align-items:center;justify-content:space-between;margin-bott
 h1{margin:0;font-size:20px}
 .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;margin-bottom:12px;box-shadow:0 8px 24px rgba(2,6,23,0.6)}
 .hidden{display:none}
+/* logout button in header */
+.logout-btn{background:rgba(255,255,255,0.12);border:none;color:white;padding:6px 10px;border-radius:8px;cursor:pointer}
+.logout-btn:hover{background:rgba(255,255,255,0.18)}
 /* centered login / landing */
 #joinSection{max-width:420px;margin:10vh auto;padding:28px;text-align:center}
 #joinSection h2{font-size:22px;margin:6px 0}
