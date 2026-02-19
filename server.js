@@ -51,8 +51,8 @@ app.use(express.json({ limit: '1mb' }));
     res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
     res.setHeader('Permissions-Policy', 'geolocation=()');
     // Content Security Policy: allow self resources, socket.io, data/blob images, and external https hosts (for pasted GIFs and Firebase storage)
-    // Note: tighten this in production to specific trusted domains if desired.
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' ws: wss: http: https:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data:;");
+    const BOT_GREET_INTERVAL_MS = parseInt(process.env.BOT_GREET_INTERVAL_MS || String(3 * 60 * 60 * 1000), 10); // 3 hours
+    const BOT_TIMECHECK_INTERVAL_MS = parseInt(process.env.BOT_TIMECHECK_INTERVAL_MS || String(30 * 60 * 1000), 10); // 30 minutes
     next();
   });
 
@@ -107,8 +107,8 @@ app.get('/download', async (req, res) => {
     if (['localhost','127.0.0.1'].includes(u.hostname)) return res.status(400).send('Invalid host');
   } catch (e) {
     return res.status(400).send('Invalid url');
-  }
-
+      setInterval(() => sendBotMessage(), BOT_GREET_INTERVAL_MS);
+      setInterval(() => sendBotMessage(), BOT_TIMECHECK_INTERVAL_MS);
   // Stream remote response to client with attachment headers
   try {
     const protocol = src.startsWith('https://') ? require('https') : require('http');

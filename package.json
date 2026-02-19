@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "keepalive": "node keepalive.js"
+    "keepalive": "node keepalive.js",
+    "fix-yow": "node scripts/fix-yow.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
