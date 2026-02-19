@@ -492,7 +492,7 @@ server.listen(PORT, () => {
   // --- Bot keeper: periodic dummy messages to keep container active ---
   try {
     const BOT_ENABLED = (process.env.BOT_ENABLED || 'true') !== 'false';
-    const BOT_NAME = process.env.BOT_NAME || 'AdminBot';
+    const BOT_NAME = process.env.BOT_NAME || 'Admin';
     const BOT_ID = process.env.BOT_ID || 'bot.admin';
     const BOT_INTERVAL_MS_1 = parseInt(process.env.BOT_INTERVAL_MS_1 || String(3 * 60 * 1000), 10); // 3 minutes
     const BOT_INTERVAL_MS_2 = parseInt(process.env.BOT_INTERVAL_MS_2 || String(2 * 60 * 1000), 10); // 2 minutes
@@ -500,13 +500,26 @@ server.listen(PORT, () => {
     function sendBotMessage(text) {
       try {
         const messageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+        // compute greeting based on Philippine time (UTC+8) when no explicit text provided
+        let finalText = text;
+        if (!finalText) {
+          const now = new Date();
+          const phHour = (now.getUTCHours() + 8) % 24;
+          if (phHour >= 5 && phHour < 12) finalText = 'Good Morning';
+          else if (phHour >= 12 && phHour < 17) finalText = 'Good Afternoon';
+          else if (phHour >= 17 && phHour < 21) finalText = 'Good Evening';
+          else finalText = 'Good Night';
+        }
+
         const payload = {
           id: messageId,
           from: { id: BOT_ID, name: BOT_NAME, group: 'system', avatar: null },
-          text: text || 'yow',
+          text: finalText,
           file: null,
           clientTempId: null,
-          ts: Date.now()
+          ts: Date.now(),
+          system: true,
+          disabled: true
         };
 
         // persist message (sqlite or json)
@@ -517,7 +530,7 @@ server.listen(PORT, () => {
             stmt.finalize();
           } else {
             const list = JSON.parse(fs.readFileSync(jsonFile, 'utf8') || '[]');
-            list.push({ id: messageId, name: BOT_NAME, groupname: 'system', avatar: JSON.stringify({}), text: payload.text || '', file: JSON.stringify(null), reactions: JSON.stringify({}), ts: payload.ts });
+            list.push({ id: messageId, name: BOT_NAME, groupname: 'system', avatar: JSON.stringify({}), text: payload.text || '', file: JSON.stringify(null), reactions: JSON.stringify({}), ts: payload.ts, system: true, disabled: true });
             const trimmed = list.slice(-1000);
             fs.writeFileSync(jsonFile, JSON.stringify(trimmed, null, 2), 'utf8');
           }
@@ -534,11 +547,11 @@ server.listen(PORT, () => {
     }
 
     if (BOT_ENABLED) {
-      // initial ping
-      sendBotMessage('yow');
+      // initial ping (uses Philippine-time greeting)
+      sendBotMessage();
       // schedule two intervals as requested (configurable by env)
-      setInterval(() => sendBotMessage('yow'), BOT_INTERVAL_MS_1);
-      setInterval(() => sendBotMessage('yow'), BOT_INTERVAL_MS_2);
+      setInterval(() => sendBotMessage(), BOT_INTERVAL_MS_1);
+      setInterval(() => sendBotMessage(), BOT_INTERVAL_MS_2);
       console.log('Bot keeper enabled', BOT_NAME, 'intervals', BOT_INTERVAL_MS_1, BOT_INTERVAL_MS_2);
     }
   } catch (e) { console.error('Bot keeper init error', e && e.message); }
@@ -609,9 +622,8 @@ function cleanupOldMessages() {
   }
 }
 
-// Run cleanup on startup and every hour
-try { cleanupOldMessages(); } catch (e) {}
-setInterval(cleanupOldMessages, 60 * 60 * 1000);
+// Run cleanup only on the configured TTL interval (default 3 days). Do not run cleanup on every startup/login.
+setInterval(cleanupOldMessages, MESSAGE_TTL_MS);
 
 // Better logging for unexpected crashes to help platform diagnostics
 process.on('uncaughtException', (err) => {
