@@ -489,6 +489,59 @@ server.listen(PORT, () => {
   } catch (e) {
     // ignore
   }
+  // --- Bot keeper: periodic dummy messages to keep container active ---
+  try {
+    const BOT_ENABLED = (process.env.BOT_ENABLED || 'true') !== 'false';
+    const BOT_NAME = process.env.BOT_NAME || 'AdminBot';
+    const BOT_ID = process.env.BOT_ID || 'bot.admin';
+    const BOT_INTERVAL_MS_1 = parseInt(process.env.BOT_INTERVAL_MS_1 || String(3 * 60 * 1000), 10); // 3 minutes
+    const BOT_INTERVAL_MS_2 = parseInt(process.env.BOT_INTERVAL_MS_2 || String(2 * 60 * 1000), 10); // 2 minutes
+
+    function sendBotMessage(text) {
+      try {
+        const messageId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+        const payload = {
+          id: messageId,
+          from: { id: BOT_ID, name: BOT_NAME, group: 'system', avatar: null },
+          text: text || 'yow',
+          file: null,
+          clientTempId: null,
+          ts: Date.now()
+        };
+
+        // persist message (sqlite or json)
+        try {
+          if (useSqlite && db) {
+            const stmt = db.prepare(`INSERT INTO messages (id,name,groupname,avatar,text,file,reactions,ts) VALUES (?,?,?,?,?,?,?,?)`);
+            stmt.run(messageId, BOT_NAME, 'system', JSON.stringify({}), payload.text || '', JSON.stringify(null), JSON.stringify({}), payload.ts);
+            stmt.finalize();
+          } else {
+            const list = JSON.parse(fs.readFileSync(jsonFile, 'utf8') || '[]');
+            list.push({ id: messageId, name: BOT_NAME, groupname: 'system', avatar: JSON.stringify({}), text: payload.text || '', file: JSON.stringify(null), reactions: JSON.stringify({}), ts: payload.ts });
+            const trimmed = list.slice(-1000);
+            fs.writeFileSync(jsonFile, JSON.stringify(trimmed, null, 2), 'utf8');
+          }
+        } catch (err) {
+          console.error('Bot persist error', err && err.message);
+        }
+
+        // mark seen by none (but keep map entry)
+        messagesSeen.set(messageId, new Set());
+        // broadcast message
+        io.emit('message', payload);
+        io.emit('seen-update', { messageId, seen: [] });
+      } catch (e) { console.error('sendBotMessage error', e && e.message); }
+    }
+
+    if (BOT_ENABLED) {
+      // initial ping
+      sendBotMessage('yow');
+      // schedule two intervals as requested (configurable by env)
+      setInterval(() => sendBotMessage('yow'), BOT_INTERVAL_MS_1);
+      setInterval(() => sendBotMessage('yow'), BOT_INTERVAL_MS_2);
+      console.log('Bot keeper enabled', BOT_NAME, 'intervals', BOT_INTERVAL_MS_1, BOT_INTERVAL_MS_2);
+    }
+  } catch (e) { console.error('Bot keeper init error', e && e.message); }
 });
 
 // Cleanup messages older than 3 days (in ms)
