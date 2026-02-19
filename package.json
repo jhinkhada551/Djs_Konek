@@ -4,7 +4,8 @@
   "description": "Simple realtime chat for ALL PINOY DJS - join with name and group, share media",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "keepalive": "node keepalive.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

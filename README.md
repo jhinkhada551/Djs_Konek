@@ -58,3 +58,27 @@ Notes about SQLite and Docker:
 
 	docker run -p 3000:3000 -v /path/on/host/data.db:/usr/src/app/data.db --env ALLOWED_ORIGIN=https://yourdomain.com all-pinoy-djs:latest
 
+## Keepalive (prevent sleeping)
+
+If your hosting provider sleeps inactive containers, you can use a small background pinger to periodically request `/health` so the container stays active.
+
+- PM2 (recommended if you control the host):
+
+	1. Install pm2 globally: `npm install -g pm2`
+	2. Start both processes using the provided ecosystem file:
+
+		 `pm2 start ecosystem.config.js`
+
+	3. View logs: `pm2 logs`
+
+	The included `ecosystem.config.js` runs `server.js` and `keepalive.js`. You can set environment variables per process, for example:
+
+	- `KEEPALIVE_TARGET` — full URL to ping (default: `http://localhost:3000/health`)
+	- `KEEPALIVE_INTERVAL_MS` — ping interval in milliseconds (default: `300000` = 5 minutes)
+
+- GitHub Actions / External uptime services:
+
+	If you cannot run a background worker on the host, use the included GitHub Actions workflow `.github/workflows/keepalive.yml` (set the `KEEPALIVE_URL` secret) or an external uptime monitor (UptimeRobot, Better Uptime) to hit `https://your-site.example/health` every 5 minutes.
+
+```
+
